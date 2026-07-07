@@ -368,35 +368,58 @@ class Collector:
 
         return False
 
-    async def collect_cron(self):
-        """Cron-режим: докачать всё новое с последнего message_id."""
+    async def sync_all_messages(self) -> int:
+        """
+        Выгрузить ВСЕ сообщения из избранного (полная синхронизация).
+        Использует min_id от последнего записанного в БД сообщения.
+        Если БД пустая — выгружает весь архив за всё время.
+        Возвращает количество новых сообщений.
+        """
         last_id = self.db.get_max_message_id()
-        logger.info(f"Cron-режим: загрузка с message_id > {last_id}")
+        if last_id > 0:
+            logger.info(f"Инкрементальная синхронизация: message_id > {last_id}")
+        else:
+            logger.info("БД пуста — полная синхронизация ВСЕГО архива избранного за всё время")
 
+        total_processed = 0
         try:
             messages = []
             async for msg in self.client.iter_messages('me', min_id=last_id, reverse=True, limit=None):
                 messages.append(msg)
 
-            logger.info(f"Найдено {len(messages)} новых сообщений")
+            logger.info(f"Найдено {len(messages)} сообщений для синхронизации")
             for msg in messages:
                 try:
-                    await self.process_message(msg)
+                    if await self.process_message(msg):
+                        total_processed += 1
                 except FloodWaitError as e:
                     logger.warning(f"FloodWait: ждём {e.seconds} секунд")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
                     logger.error(f"Ошибка обработки сообщения {msg.id}: {e}", exc_info=True)
 
+            logger.info(f"Синхронизация завершена. Добавлено: {total_processed} новых сообщений")
         except Exception as e:
-            logger.error(f"Ошибка в cron-режиме: {e}", exc_info=True)
-        finally:
-            await self.client.disconnect()
+            logger.error(f"Ошибка синхронизации: {e}", exc_info=True)
+
+        return total_processed
+
+    async def collect_cron(self):
+        """Cron-режим: докачать всё новое с последнего message_id и выйти."""
+        await self.sync_all_messages()
+        await self.client.disconnect()
 
     async def collect_watch(self):
-        """Watch-режим: слушать новые сообщения в реальном времени."""
-        logger.info("Watch-режим: запуск слушателя новых сообщений")
+        """
+        Watch-режим: сначала полная синхронизация ВСЕГО архива,
+        затем слушатель новых сообщений в реальном времени.
+        """
+        # Сначала синхронизируем всё, что уже есть в избранном
+        logger.info("=== НАЧАЛЬНАЯ СИНХРОНИЗАЦИЯ АРХИВА ===")
+        await self.sync_all_messages()
+        logger.info("=== СИНХРОНИЗАЦИЯ ЗАВЕРШЕНА, ЗАПУСК WATCH-РЕЖИМА ===")
 
+        # Теперь слушаем новые сообщения
         @self.client.on(events.NewMessage(chats='me'))
         async def handler(event):
             try:
