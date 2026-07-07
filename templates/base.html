@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Favorites Archive{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <a href="/" class="nav-brand">⭐ Favorites</a>
+            <div class="nav-links">
+                <a href="/">Главная</a>
+                <a href="/stats">Статистика</a>
+                <a href="/rss">RSS</a>
+                <button id="theme-toggle" class="btn-icon" title="Переключить тему">🌓</button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>Сообщений в архиве: <strong>{{ total if total is defined else '…' }}</strong></p>
+    </footer>
+
+    <div id="lightbox" class="lightbox" style="display:none" onclick="closeLightbox()">
+        <span class="lightbox-close">&times;</span>
+        <div class="lightbox-content" id="lightbox-content"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

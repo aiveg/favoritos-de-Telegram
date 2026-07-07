@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Статистика — Favorites Archive{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+    <h2>📊 Статистика архива</h2>
+
+    <!-- Общие показатели -->
+    <div class="stats-overview">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total_messages }}</div>
+            <div class="stat-label">Всего сообщений</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ (stats.total_size / (1024*1024)) | round(1) if stats.total_size else 0 }} МБ</div>
+            <div class="stat-label">Общий объём</div>
+        </div>
+    </div>
+
+    <!-- По типам -->
+    <div class="stats-section">
+        <h3>По типам контента</h3>
+        <div class="bar-chart">
+            {% for item in stats.by_type %}
+            <div class="bar-row">
+                <span class="bar-label">{{ item.label }}</span>
+                <div class="bar-track">
+                    {% set pct = (item.count / stats.total_messages * 100) if stats.total_messages else 0 %}
+                    <div class="bar-fill" style="width: {{ pct }}%">
+                        <span class="bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- По дням -->
+    <div class="stats-section">
+        <h3>Сохранений по дням (последние 30)</h3>
+        <div class="bar-chart">
+            {% set max_count = namespace(val=1) %}
+            {% for item in stats.by_day %}
+            {% if item.count > max_count.val %}{% set max_count.val = item.count %}{% endif %}
+            {% endfor %}
+
+            {% for item in stats.by_day %}
+            <div class="bar-row">
+                <span class="bar-label">{{ item.day }}</span>
+                <div class="bar-track">
+                    {% set pct = (item.count / max_count.val * 100) | int %}
+                    <div class="bar-fill" style="width: {{ pct }}%">
+                        <span class="bar-value">{{ item.count }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Тег-облако -->
+    {% if all_tags %}
+    <div class="stats-section">
+        <h3>Тег-облако</h3>
+        <div class="tag-cloud large">
+            {% set max_tag = namespace(val=1) %}
+            {% for _, count in all_tags[:10] %}
+            {% if count > max_tag.val %}{% set max_tag.val = count %}{% endif %}
+            {% endfor %}
+
+            {% for tag, count in all_tags[:30] %}
+            {% set size = [0.8, (count / max_tag.val * 2 + 0.8)] | max %}
+            <a href="/?tag={{ tag }}" class="tag-badge" style="font-size: {{ size }}em">
+                #{{ tag }} <span class="tag-count">{{ count }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Последние добавленные -->
+    <div class="stats-section">
+        <h3>Последние 10 сообщений</h3>
+        <div class="recent-list">
+            {% for msg in stats.recent %}
+            <a href="/message/{{ msg.message_id }}" class="recent-item">
+                <span class="recent-date">{{ msg.date | format_date }}</span>
+                <span class="recent-type">[{{ msg.content_type | content_type_label }}]</span>
+                <span class="recent-text">{{ (msg.text or '—')[:80] }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

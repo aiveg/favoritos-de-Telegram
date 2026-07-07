@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Главная — Favorites Archive{% endblock %}
+
+{% block content %}
+<!-- Панель фильтров -->
+<div class="filters-panel">
+    <form method="get" action="/" class="filters-form" id="filters-form">
+        <!-- Поиск -->
+        <div class="filter-group search-group">
+            <input type="search" name="search" placeholder="Поиск по тексту..." value="{{ query_params.search or '' }}">
+        </div>
+
+        <!-- Тип контента -->
+        <div class="filter-group type-buttons">
+            <a href="?{{ query_params | dict_to_query(except='filter_type') }}"
+               class="type-btn {% if not filter_type %}active{% endif %}"
+               title="Все">🔍 Все</a>
+            {% for ct in [ContentType.PHOTO, ContentType.VIDEO, ContentType.VOICE, ContentType.AUDIO,
+                          ContentType.DOCUMENT, ContentType.STICKER, ContentType.ROUND_VIDEO,
+                          ContentType.CUSTOM_EMOJI, ContentType.TEXT] %}
+            {% set label = ct | content_type_label %}
+            {% set icon_map = {'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
+                               'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
+                               'custom_emoji': '😀', 'text': '📝', 'album': '📚'} %}
+            <a href="?{{ query_params | dict_to_query(overrides={'filter_type': label}) }}"
+               class="type-btn {% if filter_type == label %}active{% endif %}"
+               title="{{ label }}">{{ icon_map.get(label, '📦') }} {{ label }}</a>
+            {% endfor %}
+        </div>
+
+        <!-- Сортировка -->
+        <div class="filter-group sort-group">
+            <select name="sort">
+                <option value="date" {% if query_params.sort == 'date' %}selected{% endif %}>По дате</option>
+                <option value="size" {% if query_params.sort == 'size' %}selected{% endif %}>По размеру</option>
+                <option value="type" {% if query_params.sort == 'type' %}selected{% endif %}>По типу</option>
+            </select>
+            <select name="order">
+                <option value="desc" {% if query_params.order == 'desc' %}selected{% endif %}>Сначала новые</option>
+                <option value="asc" {% if query_params.order == 'asc' %}selected{% endif %}>Сначала старые</option>
+            </select>
+            <select name="per_page">
+                {% for n in [12, 24, 48, 96] %}
+                <option value="{{ n }}" {% if query_params.per_page == n %}selected{% endif %}>{{ n }} на стр.</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Даты -->
+        <div class="filter-group date-group">
+            <input type="date" name="date_from" value="{{ query_params.date_from or '' }}" placeholder="С">
+            <span>—</span>
+            <input type="date" name="date_to" value="{{ query_params.date_to or '' }}" placeholder="По">
+        </div>
+
+        <!-- Наличие текста -->
+        <div class="filter-group text-filter">
+            <select name="has_text">
+                <option value="">Текст: любой</option>
+                <option value="yes" {% if query_params.has_text == 'yes' %}selected{% endif %}>Текст: есть</option>
+                <option value="no" {% if query_params.has_text == 'no' %}selected{% endif %}>Текст: нет</option>
+            </select>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="filter-group action-buttons">
+            <button type="submit" class="btn btn-primary">Применить</button>
+            <a href="/" class="btn btn-secondary">Сбросить</a>
+            <button type="button" class="btn btn-danger" id="delete-selected" disabled>🗑 Удалить выбранные</button>
+            <a href="/export?{{ query_params | dict_to_query(exclude=['per_page', 'sort', 'order', 'direction', 'cursor']) }}"
+               class="btn btn-outline" title="Экспорт в ZIP">📦 ZIP</a>
+            <a href="/export/json?format=json&{{ query_params | dict_to_query(exclude=['per_page', 'sort', 'order', 'direction', 'cursor']) }}"
+               class="btn btn-outline" title="Экспорт в JSON">📋 JSON</a>
+        </div>
+    </form>
+
+    <!-- Тег-облако -->
+    {% if all_tags %}
+    <div class="tag-cloud">
+        {% for tag, count in all_tags[:30] %}
+        <a href="?{{ query_params | dict_to_query(overrides={'tag': tag}) }}"
+           class="tag-badge {% if query_params.tag == tag %}active{% endif %}">
+            #{{ tag }} <span class="tag-count">{{ count }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Сетка карточек -->
+<div class="cards-grid" id="cards-grid">
+    {% if not messages %}
+    <div class="empty-state">
+        <p>📭 Нет сообщений</p>
+        <p>Запустите сборщик (<code>python collector.py</code>) для загрузки сообщений из Telegram.</p>
+    </div>
+    {% endif %}
+
+    {% for msg in messages %}
+    {% set ctype = msg.content_type | content_type_label %}
+    {% set icon_map = {'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
+                       'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
+                       'custom_emoji': '😀', 'text': '📝', 'album': '📚'} %}
+    <div class="card {{ ctype }}" data-message-id="{{ msg.message_id }}">
+        <!-- Чекбокс для удаления -->
+        <input type="checkbox" class="card-checkbox" value="{{ msg.message_id }}"
+               onclick="event.stopPropagation(); updateDeleteButton()">
+
+        <!-- Тип контента -->
+        <span class="card-type-badge">{{ icon_map.get(ctype, '📦') }}</span>
+
+        {% if msg.thumbnail_path %}
+        <a href="/message/{{ msg.message_id }}" class="card-thumb-link">
+            <img src="/thumbnail/{{ msg.message_id }}"
+                 alt="thumbnail"
+                 class="card-thumb"
+                 loading="lazy"
+                 onerror="this.style.display='none'">
+        </a>
+        {% elif msg.file_path and ctype in ('photo', 'video', 'gif', 'round_video') %}
+        <a href="/message/{{ msg.message_id }}" class="card-thumb-link">
+            <img src="/media/{{ msg.file_path }}"
+                 alt="preview"
+                 class="card-thumb"
+                 loading="lazy"
+                 onerror="this.style.display='none'">
+        </a>
+        {% elif msg.file_path %}
+        <a href="/message/{{ msg.message_id }}" class="card-thumb-link">
+            <div class="card-icon-placeholder">{{ icon_map.get(ctype, '📄') }}</div>
+        </a>
+        {% else %}
+        <a href="/message/{{ msg.message_id }}" class="card-thumb-link">
+            <div class="card-text-preview">
+                {{ (msg.text or 'Без текста')[:200] }}
+            </div>
+        </a>
+        {% endif %}
+
+        <div class="card-body">
+            <div class="card-text">
+                {% if msg.text %}
+                {{ msg.text[:150] }}{% if msg.text | length > 150 %}…{% endif %}
+                {% else %}
+                <span class="no-text">—</span>
+                {% endif %}
+            </div>
+
+            <div class="card-meta">
+                <span class="card-date">{{ msg.date | format_date }}</span>
+                {% if msg.file_size %}
+                <span class="card-size">{{ msg.file_size | format_size }}</span>
+                {% endif %}
+                {% if msg.duration %}
+                <span class="card-duration">{{ msg.duration | format_duration }}</span>
+                {% endif %}
+            </div>
+
+            {% if msg.grouped_id %}
+            <a href="/album/{{ msg.grouped_id }}" class="card-album-link">📚 Альбом</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Пагинация -->
+{% if messages %}
+<nav class="pagination">
+    {% if has_prev %}
+    <a href="?{{ query_params | dict_to_query(overrides={'cursor': prev_cursor, 'direction': 'newer'}) }}"
+       class="btn btn-page">← Назад</a>
+    {% else %}
+    <span class="btn btn-page disabled">← Назад</span>
+    {% endif %}
+
+    <span class="page-info">Страница</span>
+
+    {% if has_next %}
+    <a href="?{{ query_params | dict_to_query(overrides={'cursor': next_cursor, 'direction': 'older'}) }}"
+       class="btn btn-page">Вперёд →</a>
+    {% else %}
+    <span class="btn btn-page disabled">Вперёд →</span>
+    {% endif %}
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Удаление выбранных
+function updateDeleteButton() {
+    const checked = document.querySelectorAll('.card-checkbox:checked');
+    const btn = document.getElementById('delete-selected');
+    btn.disabled = checked.length === 0;
+    btn.textContent = checked.length ? `🗑 Удалить (${checked.length})` : '🗑 Удалить выбранные';
+}
+
+document.getElementById('delete-selected').addEventListener('click', async function() {
+    const checked = document.querySelectorAll('.card-checkbox:checked');
+    if (checked.length === 0) return;
+    if (!confirm(`Удалить ${checked.length} сообщений? Это нельзя отменить.`)) return;
+
+    const ids = Array.from(checked).map(c => c.value).join(',');
+    const formData = new FormData();
+    formData.append('message_ids', ids);
+
+    const resp = await fetch('/delete', { method: 'POST', body: formData });
+    if (resp.ok) {
+        window.location.reload();
+    }
+});
+</script>
+{% endblock %}

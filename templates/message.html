@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Сообщение #{{ message.message_id }}{% endblock %}
+
+{% block content %}
+{% set ctype = message.content_type | content_type_label %}
+{% set icon_map = {'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
+                   'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
+                   'custom_emoji': '😀', 'text': '📝', 'album': '📚'} %}
+
+<div class="message-detail">
+    <div class="message-header">
+        <a href="/" class="back-link">← Назад</a>
+        <a href="tg://local_message?id={{ message.message_id }}" class="tg-link" target="_blank">
+            📱 Открыть в Telegram
+        </a>
+    </div>
+
+    <div class="message-content">
+        <!-- Медиа -->
+        <div class="message-media">
+            {% if ctype == 'photo' or ctype == 'gif' %}
+            <img src="/media/{{ message.file_path }}"
+                 alt="photo"
+                 class="media-full"
+                 onclick="openLightbox(this.src)">
+
+            {% elif ctype == 'video' or ctype == 'round_video' %}
+            <video controls class="media-full" {% if message.thumbnail_path %}poster="/thumbnail/{{ message.message_id }}"{% endif %}>
+                <source src="/media/{{ message.file_path }}" type="video/mp4">
+            </video>
+
+            {% elif ctype == 'voice' or ctype == 'audio' %}
+            <div class="audio-player">
+                <div class="audio-icon">{% if ctype == 'voice' %}🎤{% else %}🎵{% endif %}</div>
+                <audio controls class="audio-control">
+                    <source src="/media/{{ message.file_path }}">
+                </audio>
+                {% if message.duration %}
+                <span class="audio-duration">{{ message.duration | format_duration }}</span>
+                {% endif %}
+            </div>
+
+            {% elif message.file_path %}
+            <div class="file-download">
+                <div class="file-icon">{{ icon_map.get(ctype, '📄') }}</div>
+                <div class="file-info">
+                    <span class="file-name">{{ message.file_path.split('/')[-1] }}</span>
+                    <span class="file-size">{{ message.file_size | format_size }}</span>
+                </div>
+                <a href="/media/{{ message.file_path }}" class="btn btn-primary" download>⬇ Скачать</a>
+            </div>
+
+            {% else %}
+            <div class="media-full text-only">
+                {{ icon_map.get('text', '📝') }}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Информация -->
+        <div class="message-info">
+            <div class="info-row">
+                <span class="info-label">Дата:</span>
+                <span class="info-value">{{ message.date | format_date }}</span>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">Тип:</span>
+                <span class="info-value">{{ icon_map.get(ctype, '📦') }} {{ ctype }}</span>
+            </div>
+
+            {% if message.file_size %}
+            <div class="info-row">
+                <span class="info-label">Размер:</span>
+                <span class="info-value">{{ message.file_size | format_size }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.duration %}
+            <div class="info-row">
+                <span class="info-label">Длительность:</span>
+                <span class="info-value">{{ message.duration | format_duration }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.width and message.height %}
+            <div class="info-row">
+                <span class="info-label">Разрешение:</span>
+                <span class="info-value">{{ message.width }} × {{ message.height }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.original_chat_title %}
+            <div class="info-row">
+                <span class="info-label">Исходный чат:</span>
+                <span class="info-value">{{ message.original_chat_title }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.original_sender %}
+            <div class="info-row">
+                <span class="info-label">Отправитель:</span>
+                <span class="info-value">{{ message.original_sender }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.file_hash %}
+            <div class="info-row">
+                <span class="info-label">SHA-256:</span>
+                <span class="info-value hash">{{ message.file_hash[:32] }}…</span>
+            </div>
+            {% endif %}
+
+            {% if message.grouped_id %}
+            <div class="info-row">
+                <span class="info-label">Альбом:</span>
+                <a href="/album/{{ message.grouped_id }}" class="info-value">📚 Открыть альбом</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Текст сообщения -->
+        {% if message.text %}
+        <div class="message-text">
+            <h3>Текст сообщения</h3>
+            <div class="text-content">{{ message.text }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Теги -->
+        {% if tags %}
+        <div class="message-tags">
+            <h3>Теги</h3>
+            <div class="tag-cloud">
+                {% for t in tags %}
+                <a href="/?tag={{ t }}" class="tag-badge">#{{ t }}</a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

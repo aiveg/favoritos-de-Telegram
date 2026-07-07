@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Альбом #{{ grouped_id }}{% endblock %}
+
+{% block content %}
+<div class="album-view">
+    <div class="album-header">
+        <a href="/" class="back-link">← Назад</a>
+        <h2>📚 Альбом ({{ messages | length }} элементов)</h2>
+    </div>
+
+    <div class="album-carousel">
+        {% for msg in messages %}
+        {% set ctype = msg.content_type | content_type_label %}
+        <div class="album-item">
+            {% if ctype == 'photo' or ctype == 'gif' %}
+            <a href="/message/{{ msg.message_id }}">
+                <img src="/media/{{ msg.file_path }}" alt="photo" loading="lazy">
+            </a>
+            {% elif ctype in ('video', 'round_video') %}
+            <a href="/message/{{ msg.message_id }}">
+                <video {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
+                    <source src="/media/{{ msg.file_path }}">
+                </video>
+            </a>
+            {% endif %}
+
+            <div class="album-item-info">
+                <span class="album-item-date">{{ msg.date | format_date }}</span>
+                {% if msg.text %}
+                <span class="album-item-text">{{ msg.text[:100] }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
