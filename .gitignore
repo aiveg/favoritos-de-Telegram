@@ -1,0 +1,7 @@
+.env
+*.session
+media/
+data/
+*.pyc
+__pycache__/
+*.log
