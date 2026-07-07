@@ -178,15 +178,23 @@ class Collector:
         )
 
     def _build_file_path(self, content_type: ContentType, message_id: int,
-                         filename: str = None) -> str:
-        """Построить путь для сохранения файла: media/<тип>/<год>/<мес>/<id>_<имя>.<ext>."""
-        now = datetime.now()
+                         filename: str = None, msg_date: datetime = None) -> str:
+        """
+        Построить путь для сохранения файла: media/<тип>/<год>/<мес>/<id>_<имя>.<ext>.
+        Дата берётся из сообщения, конвертируется в МСК (UTC+3).
+        """
+        if msg_date and msg_date.tzinfo is None:
+            msg_date = msg_date.replace(tzinfo=dt_timezone.utc)
+        if msg_date:
+            msk_date = msg_date + timedelta(hours=3)
+        else:
+            msk_date = datetime.now()
         label = get_content_type_label(content_type)
         ext = get_file_ext(content_type, filename)
         safe_name = sanitize_filename(filename or str(message_id))
         if not safe_name.endswith(f".{ext}"):
             safe_name = f"{safe_name}.{ext}"
-        rel_path = f"{label}/{now.year}/{now.month:02d}/{message_id}_{safe_name}"
+        rel_path = f"{label}/{msk_date.year}/{msk_date.month:02d}/{message_id}_{safe_name}"
         abs_path = os.path.join(config.media_dir, rel_path)
         return abs_path
 
@@ -201,7 +209,7 @@ class Collector:
             return None, None, None
 
         filename = get_original_filename(message, content_type)
-        abs_path = self._build_file_path(content_type, message_id, filename)
+        abs_path = self._build_file_path(content_type, message_id, filename, message.date)
 
         # Проверяем существование файла на диске
         if os.path.exists(abs_path):

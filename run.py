@@ -72,7 +72,12 @@ def run_collector():
 
     mode = "watch" if config.watch_mode else "cron"
     logger.info(f"Запуск сборщика в режиме: {mode}")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        logger.info("Сборщик остановлен пользователем (Ctrl+C)")
+    except asyncio.CancelledError:
+        logger.info("Сборщик остановлен (CancelledError)")
 
 
 def main():

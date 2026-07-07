@@ -22,4 +22,12 @@
 - [x] collector.py: добавлен метод sync_all_messages() — полная выгрузка архива
 - [x] watch-режим: сначала sync_all_messages(), потом слушатель новых
 - [x] cron-режим: sync_all_messages() с проверкой min_id
+- [x] Сделать коммит (845b649 fix: watch-режим сначала синхронизирует весь архив)
+
+### 08.07.2026 02:38 — Исправление: пути по дате сообщения, UI как Telegram, чистый shutdown
+- [ ] Очистить data/ и media/
+- [ ] collector.py: путь media/ строится от message.date в МСК, а не от datetime.now()
+- [ ] collector.py: чистый выход по Ctrl+C (CancelledError)
+- [ ] Переделать index.html: лента в стиле Telegram вместо сетки карточек
+- [ ] Переделать style.css: стили под Telegram-ленту
 - [ ] Сделать коммит
