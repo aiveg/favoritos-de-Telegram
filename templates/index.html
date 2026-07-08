@@ -43,8 +43,8 @@
     </form>
 </div>
 
-<!-- Лента -->
-<div class="tg-feed" id="tg-feed">
+<!-- Лента в виде чата -->
+<div class="chat-feed" id="chat-feed">
     {% if not messages %}
     <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code> для загрузки архива</p></div>
     {% endif %}
@@ -55,84 +55,89 @@
     {% set is_fwd = msg.is_forwarded == 1 %}
     {% set fwd_title = msg.forward_chat_title or msg.forward_sender or 'Источник' %}
 
-    <div class="tg-message {% if is_fwd %}tg-forwarded{% else %}tg-own{% endif %}">
-        <!-- Шапка пересланного -->
+    <!-- Сообщение в чате -->
+    <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}">
         {% if is_fwd %}
-        <div class="tg-fwd-header">
-            <div class="tg-fwd-avatar">{{ icon }}</div>
-            <div class="tg-fwd-info">
-                <span class="tg-fwd-title">{{ fwd_title }}</span>
-                <span class="tg-fwd-date">{{ msg.date | format_date }}</span>
-            </div>
+        <!-- Аватарка источника (кликабельная ссылка на оригинал) -->
+        <div class="chat-avatar-col">
             {% if msg.forward_message_link %}
-            <a href="{{ msg.forward_message_link }}" class="tg-fwd-link" target="_blank" title="Открыть оригинал">↗</a>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        <!-- Шапка своего сообщения -->
-        {% if not is_fwd %}
-        <div class="tg-own-header">
-            <div class="tg-own-meta">
-                <span class="tg-own-date">{{ msg.date | format_date }}</span>
-                <span class="tg-own-badge">{{ ctype | replace('_', ' ') | title }}</span>
-            </div>
-            <div class="tg-own-actions">
-                <a href="/message/{{ msg.message_id }}" class="tg-action-link">🔗</a>
-                <a href="tg://local_message?id={{ msg.message_id }}" class="tg-action-link">📱</a>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Медиа-контент -->
-        <div class="tg-msg-media">
-            {% if ctype == 'photo' %}
-            <img src="/media/{{ msg.file_path }}" class="tg-media-img" loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
-            {% elif ctype in ('video', 'gif', 'round_video') %}
-            <video controls class="tg-media-video" preload="metadata" {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
-                <source src="/media/{{ msg.file_path }}" type="video/mp4">
-            </video>
-            {% elif ctype == 'voice' %}
-            <div class="tg-voice-block">
-                <div class="tg-voice-icon">🎤</div>
-                <div class="tg-voice-info">
-                    <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
-                    <span class="tg-voice-meta">Голосовое{% if msg.duration %} · {{ msg.duration | format_duration }}{% endif %}</span>
-                </div>
-            </div>
-            {% elif ctype == 'audio' %}
-            <div class="tg-audio-block">
-                <div class="tg-audio-icon">🎵</div>
-                <div class="tg-audio-info">
-                    <div class="tg-audio-name">{{ msg.file_path.split('/')[-1] if msg.file_path else 'Аудио' }}</div>
-                    <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
-                </div>
-            </div>
-            {% elif ctype in ('sticker', 'custom_emoji') %}
-            <img src="/media/{{ msg.file_path }}" class="tg-sticker" loading="lazy">
-            {% elif ctype == 'document' %}
-            <a href="/media/{{ msg.file_path }}" class="tg-doc-block" download>
-                <div class="tg-doc-icon">📄</div>
-                <div class="tg-doc-info">
-                    <div class="tg-doc-name">{{ msg.file_path.split('/')[-1] if msg.file_path else 'Документ' }}</div>
-                    <div class="tg-doc-size">{{ msg.file_size | format_size }}</div>
-                </div>
-                <div class="tg-doc-dl">⬇</div>
+            <a href="{{ msg.forward_message_link }}" target="_blank" class="chat-avatar-link" title="Открыть оригинал в {{ fwd_title }}">
+                <div class="chat-avatar">{{ icon }}</div>
             </a>
-            {% elif ctype == 'album' and msg.grouped_id %}
-            <a href="/album/{{ msg.grouped_id }}" class="tg-album-link">📚 Открыть альбом</a>
+            {% else %}
+            <div class="chat-avatar">{{ icon }}</div>
             {% endif %}
         </div>
+        {% endif %}
 
-        <!-- Текст -->
-        {% if msg.text %}<div class="tg-msg-text">{{ msg.text }}</div>{% endif %}
+        <div class="chat-bubble-col">
+            {% if is_fwd %}
+            <!-- Имя источника над сообщением -->
+            <div class="chat-sender-row">
+                {% if msg.forward_message_link %}
+                <a href="{{ msg.forward_message_link }}" target="_blank" class="chat-sender-link">{{ fwd_title }}</a>
+                {% else %}
+                <span class="chat-sender-name">{{ fwd_title }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
 
-        <!-- Футер -->
-        <div class="tg-msg-footer">
-            {% if msg.file_size %}<span>{{ msg.file_size | format_size }}</span>{% endif %}
-            {% if msg.duration and ctype not in ('voice', 'audio') %}<span>{{ msg.duration | format_duration }}</span>{% endif %}
-            {% if msg.width and msg.height %}<span>{{ msg.width }}×{{ msg.height }}</span>{% endif %}
-            {% if msg.grouped_id and ctype != 'album' %}<a href="/album/{{ msg.grouped_id }}" class="tg-album-tag">📚 Альбом</a>{% endif %}
+            <!-- Пузырь сообщения -->
+            <div class="chat-bubble {% if is_fwd %}bubble-from{% else %}bubble-me{% endif %}">
+                <!-- Медиа -->
+                <div class="chat-media">
+                    {% if ctype == 'photo' %}
+                    <img src="/media/{{ msg.file_path }}" class="chat-img"
+                         loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
+                    {% elif ctype in ('video', 'gif', 'round_video') %}
+                    <video controls class="chat-video" preload="metadata"
+                           {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
+                        <source src="/media/{{ msg.file_path }}" type="video/mp4">
+                    </video>
+                    {% elif ctype == 'voice' %}
+                    <div class="chat-voice">
+                        <span class="voice-icon">🎤</span>
+                        <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
+                        {% if msg.duration %}<span class="voice-dur">{{ msg.duration | format_duration }}</span>{% endif %}
+                    </div>
+                    {% elif ctype == 'audio' %}
+                    <div class="chat-audio">
+                        <span class="audio-icon">🎵</span>
+                        <div class="audio-meta">
+                            <div class="audio-name">{{ msg.file_path.split('/')[-1] if msg.file_path else 'Аудио' }}</div>
+                            <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
+                        </div>
+                    </div>
+                    {% elif ctype in ('sticker', 'custom_emoji') %}
+                    <img src="/media/{{ msg.file_path }}" class="chat-sticker" loading="lazy">
+                    {% elif ctype == 'document' %}
+                    <a href="/media/{{ msg.file_path }}" class="chat-doc" download>
+                        <span class="doc-icon">📄</span>
+                        <div class="doc-info">
+                            <span class="doc-name">{{ msg.file_path.split('/')[-1] if msg.file_path else 'Документ' }}</span>
+                            <span class="doc-size">{{ msg.file_size | format_size }}</span>
+                        </div>
+                        <span class="doc-dl">⬇</span>
+                    </a>
+                    {% elif ctype == 'album' and msg.grouped_id %}
+                    <a href="/album/{{ msg.grouped_id }}" class="chat-album-link">📚 Открыть альбом ({{ msg.grouped_id }})</a>
+                    {% endif %}
+                </div>
+
+                <!-- Текст -->
+                {% if msg.text %}
+                <div class="chat-text">{{ msg.text }}</div>
+                {% endif %}
+
+                <!-- Мета (дата, размер) -->
+                <div class="chat-meta">
+                    <span class="chat-date">{{ msg.date | format_date }}</span>
+                    {% if msg.file_size %}<span class="chat-size">{{ msg.file_size | format_size }}</span>{% endif %}
+                    {% if msg.grouped_id and ctype != 'album' %}
+                    <a href="/album/{{ msg.grouped_id }}" class="chat-album-tag">📚 Альбом</a>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
     {% endfor %}
@@ -164,35 +169,74 @@
             var resp = await fetch('/api/messages?' + params.toString());
             var data = await resp.json();
             if (data.messages && data.messages.length > 0) {
-                var feed = document.getElementById('tg-feed');
+                var feed = document.getElementById('chat-feed');
                 var icons = ["🖼️","🎬","🎤","🎵","📄","😜","✨","🔵","😀","📝","📚"];
                 data.messages.forEach(function(msg) {
                     var ctype = msg.type_label || 'text';
                     var icon = icons[msg.content_type] || '📦';
                     var isFwd = msg.is_forwarded == 1;
                     var fwdTitle = msg.forward_chat_title || msg.forward_sender || 'Источник';
-                    var displayType = ctype.replace(/_/g, ' ').replace(/\b\w/g, function(l){return l.toUpperCase()});
 
-                    var headerHtml = '';
+                    // Аватарка
+                    var avatarHtml = '';
                     if (isFwd) {
-                        headerHtml = '<div class="tg-fwd-header"><div class="tg-fwd-avatar">' + icon + '</div><div class="tg-fwd-info"><span class="tg-fwd-title">' + fwdTitle + '</span><span class="tg-fwd-date">' + (msg.date_formatted || '') + '</span></div>' + (msg.forward_message_link ? '<a href="' + msg.forward_message_link + '" class="tg-fwd-link" target="_blank" title="Открыть оригинал">↗</a>' : '') + '</div>';
-                    } else {
-                        headerHtml = '<div class="tg-own-header"><div class="tg-own-meta"><span class="tg-own-date">' + (msg.date_formatted || '') + '</span><span class="tg-own-badge">' + displayType + '</span></div><div class="tg-own-actions"><a href="/message/' + msg.message_id + '" class="tg-action-link">🔗</a><a href="tg://local_message?id=' + msg.message_id + '" class="tg-action-link">📱</a></div></div>';
+                        var avatar = '<div class="chat-avatar">' + icon + '</div>';
+                        if (msg.forward_message_link) {
+                            avatar = '<a href="' + msg.forward_message_link + '" target="_blank" class="chat-avatar-link" title="Открыть оригинал в ' + fwdTitle + '"><div class="chat-avatar">' + icon + '</div></a>';
+                        }
+                        avatarHtml = '<div class="chat-avatar-col">' + avatar + '</div>';
                     }
 
-                    var m = '';
-                    if (ctype === 'photo') m = '<img src="/media/'+msg.file_path+'" class="tg-media-img" loading="lazy" onclick="openLightbox(\'/media/'+msg.file_path+'\')">';
-                    else if (ctype==='video'||ctype==='gif'||ctype==='round_video') { var p=msg.thumbnail_path?' poster="/thumbnail/'+msg.message_id+'"':''; m='<video controls class="tg-media-video" preload="metadata"'+p+'><source src="/media/'+msg.file_path+'" type="video/mp4"></video>'; }
-                    else if (ctype==='voice') m='<div class="tg-voice-block"><div class="tg-voice-icon">🎤</div><div class="tg-voice-info"><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio><span class="tg-voice-meta">Голосовое'+(msg.duration?' · '+(msg.duration_formatted||''):'')+'</span></div></div>';
-                    else if (ctype==='audio') { var f=msg.file_path?msg.file_path.split('/').pop():'Аудио'; m='<div class="tg-audio-block"><div class="tg-audio-icon">🎵</div><div class="tg-audio-info"><div class="tg-audio-name">'+f+'</div><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio></div></div>'; }
-                    else if (ctype==='sticker'||ctype==='custom_emoji') m='<img src="/media/'+msg.file_path+'" class="tg-sticker" loading="lazy">';
-                    else if (ctype==='document') { var f=msg.file_path?msg.file_path.split('/').pop():'Документ'; m='<a href="/media/'+msg.file_path+'" class="tg-doc-block" download><div class="tg-doc-icon">📄</div><div class="tg-doc-info"><div class="tg-doc-name">'+f+'</div><div class="tg-doc-size">'+(msg.size_formatted||'')+'</div></div><div class="tg-doc-dl">⬇</div></a>'; }
-                    else if (ctype==='album'&&msg.grouped_id) m='<a href="/album/'+msg.grouped_id+'" class="tg-album-link">📚 Открыть альбом</a>';
+                    // Имя отправителя
+                    var senderHtml = '';
+                    if (isFwd) {
+                        if (msg.forward_message_link) {
+                            senderHtml = '<div class="chat-sender-row"><a href="' + msg.forward_message_link + '" target="_blank" class="chat-sender-link">' + fwdTitle + '</a></div>';
+                        } else {
+                            senderHtml = '<div class="chat-sender-row"><span class="chat-sender-name">' + fwdTitle + '</span></div>';
+                        }
+                    }
 
-                    var d = document.createElement('div');
-                    d.className = 'tg-message ' + (isFwd ? 'tg-forwarded' : 'tg-own');
-                    d.innerHTML = headerHtml + '<div class="tg-msg-media">'+m+'</div>' + (msg.text?'<div class="tg-msg-text">'+msg.text+'</div>':'') + '<div class="tg-msg-footer">' + (msg.file_size?'<span>'+(msg.size_formatted||'')+'</span>':'') + (msg.duration&&ctype!=='voice'&&ctype!=='audio'?'<span>'+(msg.duration_formatted||'')+'</span>':'') + (msg.width&&msg.height?'<span>'+msg.width+'×'+msg.height+'</span>':'') + (msg.grouped_id&&ctype!=='album'?'<a href="/album/'+msg.grouped_id+'" class="tg-album-tag">📚 Альбом</a>':'') + '</div>';
-                    feed.appendChild(d);
+                    // Медиа
+                    var mediaHtml = '';
+                    if (ctype === 'photo') {
+                        mediaHtml = '<img src="/media/'+msg.file_path+'" class="chat-img" loading="lazy" onclick="openLightbox(\'/media/'+msg.file_path+'\')">';
+                    } else if (ctype==='video'||ctype==='gif'||ctype==='round_video') {
+                        var p = msg.thumbnail_path ? ' poster="/thumbnail/'+msg.message_id+'"' : '';
+                        mediaHtml = '<video controls class="chat-video" preload="metadata"'+p+'><source src="/media/'+msg.file_path+'" type="video/mp4"></video>';
+                    } else if (ctype==='voice') {
+                        mediaHtml = '<div class="chat-voice"><span class="voice-icon">🎤</span><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio>'+(msg.duration?'<span class="voice-dur">'+(msg.duration_formatted||'')+'</span>':'')+'</div>';
+                    } else if (ctype==='audio') {
+                        var f = msg.file_path?msg.file_path.split('/').pop():'Аудио';
+                        mediaHtml = '<div class="chat-audio"><span class="audio-icon">🎵</span><div class="audio-meta"><div class="audio-name">'+f+'</div><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio></div></div>';
+                    } else if (ctype==='sticker'||ctype==='custom_emoji') {
+                        mediaHtml = '<img src="/media/'+msg.file_path+'" class="chat-sticker" loading="lazy">';
+                    } else if (ctype==='document') {
+                        var f = msg.file_path?msg.file_path.split('/').pop():'Документ';
+                        mediaHtml = '<a href="/media/'+msg.file_path+'" class="chat-doc" download><span class="doc-icon">📄</span><div class="doc-info"><span class="doc-name">'+f+'</span><span class="doc-size">'+(msg.size_formatted||'')+'</span></div><span class="doc-dl">⬇</span></a>';
+                    } else if (ctype==='album'&&msg.grouped_id) {
+                        mediaHtml = '<a href="/album/'+msg.grouped_id+'" class="chat-album-link">📚 Открыть альбом ('+msg.grouped_id+')</a>';
+                    }
+
+                    // Текст
+                    var textHtml = msg.text ? '<div class="chat-text">' + msg.text + '</div>' : '';
+
+                    // Мета
+                    var metaHtml = '<span class="chat-date">' + (msg.date_formatted||'') + '</span>';
+                    if (msg.size_formatted) metaHtml += '<span class="chat-size">' + msg.size_formatted + '</span>';
+                    if (msg.grouped_id && ctype !== 'album') metaHtml += '<a href="/album/'+msg.grouped_id+'" class="chat-album-tag">📚 Альбом</a>';
+
+                    var row = document.createElement('div');
+                    row.className = 'chat-msg-row ' + (isFwd ? 'chat-from' : 'chat-me');
+                    row.innerHTML = avatarHtml +
+                        '<div class="chat-bubble-col">' +
+                        senderHtml +
+                        '<div class="chat-bubble ' + (isFwd ? 'bubble-from' : 'bubble-me') + '">' +
+                        '<div class="chat-media">' + mediaHtml + '</div>' +
+                        textHtml +
+                        '<div class="chat-meta">' + metaHtml + '</div>' +
+                        '</div></div>';
+                    feed.appendChild(row);
                 });
                 if (data.has_next && data.next_cursor) { btn.dataset.nextCursor = data.next_cursor; btn.textContent = 'Загрузить ещё ↓'; btn.disabled = false; }
                 else btn.remove();
