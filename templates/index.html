@@ -2,13 +2,11 @@
 {% block title %}Favorites — Telegram Archive{% endblock %}
 
 {% block content %}
-<!-- Поиск и фильтры — сверху, как в Telegram -->
+<!-- Поиск и фильтры -->
 <div class="tg-search-bar">
     <form method="get" action="/" class="tg-search-form" id="filters-form">
         <input type="search" name="search" class="tg-search-input"
-               placeholder="Поиск..." value="{{ query_params.search or '' }}"
-               autocomplete="off">
-
+               placeholder="Поиск..." value="{{ search or '' }}">
         <div class="tg-filter-row">
             <select name="filter_type" class="tg-select">
                 <option value="">Все типы</option>
@@ -21,103 +19,77 @@
                 <option value="round_video" {% if filter_type == 'round_video' %}selected{% endif %}>🔵 Кружочки</option>
                 <option value="text" {% if filter_type == 'text' %}selected{% endif %}>📝 Текст</option>
             </select>
-
             <select name="sort" class="tg-select">
-                <option value="date" {% if query_params.sort == 'date' %}selected{% endif %}>По дате</option>
-                <option value="size" {% if query_params.sort == 'size' %}selected{% endif %}>По размеру</option>
+                <option value="date" {% if sort == 'date' %}selected{% endif %}>По дате</option>
+                <option value="size" {% if sort == 'size' %}selected{% endif %}>По размеру</option>
             </select>
-
             <select name="order" class="tg-select">
-                <option value="desc" {% if query_params.order == 'desc' %}selected{% endif %}>Новые → старые</option>
-                <option value="asc" {% if query_params.order == 'asc' %}selected{% endif %}>Старые → новые</option>
+                <option value="desc" {% if order == 'desc' %}selected{% endif %}>Новые → старые</option>
+                <option value="asc" {% if order == 'asc' %}selected{% endif %}>Старые → новые</option>
             </select>
-
-            <input type="date" name="date_from" value="{{ query_params.date_from or '' }}" class="tg-date" title="С даты">
-            <input type="date" name="date_to" value="{{ query_params.date_to or '' }}" class="tg-date" title="По дату">
-
+            <input type="date" name="date_from" value="{{ date_from or '' }}" class="tg-date" title="С даты">
+            <input type="date" name="date_to" value="{{ date_to or '' }}" class="tg-date" title="По дату">
             <button type="submit" class="tg-btn tg-btn-primary">Применить</button>
             <a href="/" class="tg-btn tg-btn-secondary">Сбросить</a>
         </div>
-
         {% if all_tags %}
         <div class="tg-tags">
-            {% for tag, count in all_tags[:20] %}
-            <a href="?{{ query_params | dict_to_query(overrides={'tag': tag}) }}"
-               class="tg-tag {% if query_params.tag == tag %}active{% endif %}">#{{ tag }}</a>
+            {% for t, cnt in all_tags[:20] %}
+            <a href="/?tag={{ t }}&sort={{ sort }}&order={{ order }}&per_page={{ per_page }}&filter_type={{ filter_type or '' }}&search={{ search or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}&has_text={{ has_text or '' }}"
+               class="tg-tag {% if tag == t %}active{% endif %}">#{{ t }}</a>
             {% endfor %}
         </div>
         {% endif %}
     </form>
 </div>
 
-<!-- Лента сообщений в стиле Telegram -->
+<!-- Лента сообщений -->
 <div class="tg-feed" id="tg-feed">
     {% if not messages %}
-    <div class="tg-empty">
-        <p>📭 Нет сообщений</p>
-        <p>Запустите <code>python run.py collect</code> для загрузки архива из Telegram</p>
-    </div>
+    <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code> для загрузки архива из Telegram</p></div>
     {% endif %}
 
     {% for msg in messages %}
     {% set ctype = msg.content_type | content_type_label %}
-    {% set icon_map = {'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
-                       'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
-                       'custom_emoji': '😀', 'text': '📝', 'album': '📚'} %}
-    <div class="tg-message" data-message-id="{{ msg.message_id }}">
-        <!-- Заголовок: иконка + дата -->
+    {% set icon = msg.content_type | icon_for %}
+    <div class="tg-message">
         <div class="tg-msg-header">
-            <div class="tg-msg-avatar">{{ icon_map.get(ctype, '📦') }}</div>
+            <div class="tg-msg-avatar">{{ icon }}</div>
             <div class="tg-msg-meta">
                 <span class="tg-msg-type">{{ ctype | replace('_', ' ') | title }}</span>
                 <span class="tg-msg-date">{{ msg.date | format_date }}</span>
-                {% if msg.original_chat_title %}
-                <span class="tg-msg-chat">из {{ msg.original_chat_title }}</span>
-                {% endif %}
+                {% if msg.original_chat_title %}<span class="tg-msg-chat">из {{ msg.original_chat_title }}</span>{% endif %}
             </div>
             <div class="tg-msg-actions">
-                <a href="/message/{{ msg.message_id }}" class="tg-action-link" title="Открыть отдельно">🔗</a>
-                <a href="tg://local_message?id={{ msg.message_id }}" class="tg-action-link" title="В Telegram">📱</a>
+                <a href="/message/{{ msg.message_id }}" class="tg-action-link">🔗</a>
+                <a href="tg://local_message?id={{ msg.message_id }}" class="tg-action-link">📱</a>
             </div>
         </div>
-
-        <!-- Медиа-контент -->
         <div class="tg-msg-media">
             {% if ctype == 'photo' %}
-            <img src="/media/{{ msg.file_path }}" alt="photo" class="tg-media-img" loading="lazy"
-                 onclick="openLightbox('/media/{{ msg.file_path }}')">
-
-            {% elif ctype == 'video' or ctype == 'gif' or ctype == 'round_video' %}
-            <video controls class="tg-media-video" preload="metadata"
-                   {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
+            <img src="/media/{{ msg.file_path }}" class="tg-media-img" loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
+            {% elif ctype in ('video', 'gif', 'round_video') %}
+            <video controls class="tg-media-video" preload="metadata" {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
                 <source src="/media/{{ msg.file_path }}" type="video/mp4">
             </video>
-
             {% elif ctype == 'voice' %}
             <div class="tg-voice-block">
                 <div class="tg-voice-icon">🎤</div>
                 <div class="tg-voice-info">
-                    <audio controls preload="metadata">
-                        <source src="/media/{{ msg.file_path }}">
-                    </audio>
+                    <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
                     <span class="tg-voice-meta">Голосовое сообщение{% if msg.duration %} · {{ msg.duration | format_duration }}{% endif %}</span>
                 </div>
             </div>
-
             {% elif ctype == 'audio' %}
             <div class="tg-audio-block">
                 <div class="tg-audio-icon">🎵</div>
                 <div class="tg-audio-info">
                     <div class="tg-audio-name">{{ msg.file_path.split('/')[-1] if msg.file_path else 'Аудио' }}</div>
-                    <audio controls preload="metadata">
-                        <source src="/media/{{ msg.file_path }}">
-                    </audio>
+                    <audio controls preload="metadata"><source src="/media/{{ msg.file_path }}"></audio>
                 </div>
             </div>
-
-            {% elif ctype == 'sticker' or ctype == 'custom_emoji' %}
-            <img src="/media/{{ msg.file_path }}" alt="sticker" class="tg-sticker" loading="lazy">
-
+            {% elif ctype in ('sticker', 'custom_emoji') %}
+            <img src="/media/{{ msg.file_path }}" class="tg-sticker" loading="lazy">
             {% elif ctype == 'document' %}
             <a href="/media/{{ msg.file_path }}" class="tg-doc-block" download>
                 <div class="tg-doc-icon">📄</div>
@@ -127,45 +99,24 @@
                 </div>
                 <div class="tg-doc-dl">⬇</div>
             </a>
-
             {% elif ctype == 'album' and msg.grouped_id %}
             <a href="/album/{{ msg.grouped_id }}" class="tg-album-link">📚 Открыть альбом</a>
-
-            {% else %}
-            <!-- text — только текст -->
             {% endif %}
         </div>
-
-        <!-- Текст сообщения -->
-        {% if msg.text %}
-        <div class="tg-msg-text">{{ msg.text }}</div>
-        {% endif %}
-
-        <!-- Мета-информация под сообщением -->
+        {% if msg.text %}<div class="tg-msg-text">{{ msg.text }}</div>{% endif %}
         <div class="tg-msg-footer">
-            {% if msg.file_size %}
-            <span class="tg-msg-size">{{ msg.file_size | format_size }}</span>
-            {% endif %}
-            {% if msg.duration and ctype not in ('voice', 'audio') %}
-            <span class="tg-msg-duration">{{ msg.duration | format_duration }}</span>
-            {% endif %}
-            {% if msg.width and msg.height %}
-            <span class="tg-msg-res">{{ msg.width }}×{{ msg.height }}</span>
-            {% endif %}
-            {% if msg.grouped_id and ctype != 'album' %}
-            <a href="/album/{{ msg.grouped_id }}" class="tg-album-tag">📚 Альбом</a>
-            {% endif %}
+            {% if msg.file_size %}<span>{{ msg.file_size | format_size }}</span>{% endif %}
+            {% if msg.duration and ctype not in ('voice', 'audio') %}<span>{{ msg.duration | format_duration }}</span>{% endif %}
+            {% if msg.width and msg.height %}<span>{{ msg.width }}×{{ msg.height }}</span>{% endif %}
+            {% if msg.grouped_id and ctype != 'album' %}<a href="/album/{{ msg.grouped_id }}" class="tg-album-tag">📚 Альбом</a>{% endif %}
         </div>
     </div>
     {% endfor %}
 </div>
 
-<!-- Пагинация: кнопка "Загрузить ещё" -->
 {% if has_next %}
-<div class="tg-load-more-container" id="load-more-container">
-    <button class="tg-btn tg-load-more" id="load-more-btn"
-            data-next-cursor="{{ next_cursor }}"
-            data-direction="older">
+<div class="tg-load-more-container">
+    <button class="tg-btn tg-load-more" id="load-more-btn" data-next-cursor="{{ next_cursor }}">
         Загрузить ещё ↓
     </button>
 </div>
@@ -175,121 +126,49 @@
 {% block scripts %}
 <script>
 (function() {
-    let loading = false;
-    const loadMoreBtn = document.getElementById('load-more-btn');
-    if (!loadMoreBtn) return;
+    var btn = document.getElementById('load-more-btn');
+    if (!btn) return;
+    var loading = false;
 
-    // Функция для построения query string из текущих параметров
-    function getQueryParams(overrides) {
-        const params = new URLSearchParams(window.location.search);
-        // Убираем cursor и direction
-        params.delete('cursor');
-        params.delete('direction');
-        if (overrides) {
-            for (const [k, v] of Object.entries(overrides)) {
-                if (v === null || v === undefined) {
-                    params.delete(k);
-                } else {
-                    params.set(k, v);
-                }
-            }
-        }
-        return params.toString();
-    }
-
-    loadMoreBtn.addEventListener('click', async function() {
+    btn.addEventListener('click', async function() {
         if (loading) return;
         loading = true;
-        loadMoreBtn.textContent = 'Загрузка...';
-        loadMoreBtn.disabled = true;
+        btn.textContent = 'Загрузка...';
+        btn.disabled = true;
 
-        const cursor = loadMoreBtn.dataset.nextCursor;
-        const direction = loadMoreBtn.dataset.direction;
-        const qs = getQueryParams({ cursor: cursor, direction: direction });
-        const apiUrl = '/api/messages?' + qs;
+        var params = new URLSearchParams(window.location.search);
+        params.set('cursor', btn.dataset.nextCursor);
+        params.set('direction', 'older');
+        var apiUrl = '/api/messages?' + params.toString();
 
         try {
-            const resp = await fetch(apiUrl);
-            const data = await resp.json();
-
+            var resp = await fetch(apiUrl);
+            var data = await resp.json();
             if (data.messages && data.messages.length > 0) {
-                const feed = document.getElementById('tg-feed');
-                const iconMap = {
-                    'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
-                    'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
-                    'custom_emoji': '😀', 'text': '📝', 'album': '📚'
-                };
-
+                var feed = document.getElementById('tg-feed');
+                var icons = ["🖼️","🎬","🎤","🎵","📄","😜","✨","🔵","😀","📝","📚"];
                 data.messages.forEach(function(msg) {
-                    const ctype = msg.type_label || 'text';
-                    const icon = iconMap[ctype] || '📦';
-                    const displayType = ctype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
-                    let mediaHtml = '';
-                    if (ctype === 'photo') {
-                        mediaHtml = '<img src="/media/' + msg.file_path + '" class="tg-media-img" loading="lazy" onclick="openLightbox(\'/media/' + msg.file_path + '\')">';
-                    } else if (ctype === 'video' || ctype === 'gif' || ctype === 'round_video') {
-                        let poster = '';
-                        if (msg.thumbnail_path) poster = ' poster="/thumbnail/' + msg.message_id + '"';
-                        mediaHtml = '<video controls class="tg-media-video" preload="metadata"' + poster + '><source src="/media/' + msg.file_path + '" type="video/mp4"></video>';
-                    } else if (ctype === 'voice') {
-                        mediaHtml = '<div class="tg-voice-block"><div class="tg-voice-icon">🎤</div><div class="tg-voice-info"><audio controls preload="metadata"><source src="/media/' + msg.file_path + '"></audio><span class="tg-voice-meta">Голосовое сообщение' + (msg.duration ? ' · ' + (msg.duration_formatted || '') : '') + '</span></div></div>';
-                    } else if (ctype === 'audio') {
-                        const fname = msg.file_path ? msg.file_path.split('/').pop() : 'Аудио';
-                        mediaHtml = '<div class="tg-audio-block"><div class="tg-audio-icon">🎵</div><div class="tg-audio-info"><div class="tg-audio-name">' + fname + '</div><audio controls preload="metadata"><source src="/media/' + msg.file_path + '"></audio></div></div>';
-                    } else if (ctype === 'sticker' || ctype === 'custom_emoji') {
-                        mediaHtml = '<img src="/media/' + msg.file_path + '" class="tg-sticker" loading="lazy">';
-                    } else if (ctype === 'document') {
-                        const fname = msg.file_path ? msg.file_path.split('/').pop() : 'Документ';
-                        mediaHtml = '<a href="/media/' + msg.file_path + '" class="tg-doc-block" download><div class="tg-doc-icon">📄</div><div class="tg-doc-info"><div class="tg-doc-name">' + fname + '</div><div class="tg-doc-size">' + (msg.size_formatted || '') + '</div></div><div class="tg-doc-dl">⬇</div></a>';
-                    } else if (ctype === 'album' && msg.grouped_id) {
-                        mediaHtml = '<a href="/album/' + msg.grouped_id + '" class="tg-album-link">📚 Открыть альбом</a>';
-                    }
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = 'tg-message';
-                    msgDiv.innerHTML =
-                        '<div class="tg-msg-header">' +
-                            '<div class="tg-msg-avatar">' + icon + '</div>' +
-                            '<div class="tg-msg-meta">' +
-                                '<span class="tg-msg-type">' + displayType + '</span>' +
-                                '<span class="tg-msg-date">' + (msg.date_formatted || '') + '</span>' +
-                                (msg.original_chat_title ? '<span class="tg-msg-chat">из ' + msg.original_chat_title + '</span>' : '') +
-                            '</div>' +
-                            '<div class="tg-msg-actions">' +
-                                '<a href="/message/' + msg.message_id + '" class="tg-action-link" title="Открыть отдельно">🔗</a>' +
-                                '<a href="tg://local_message?id=' + msg.message_id + '" class="tg-action-link" title="В Telegram">📱</a>' +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="tg-msg-media">' + mediaHtml + '</div>' +
-                        (msg.text ? '<div class="tg-msg-text">' + msg.text + '</div>' : '') +
-                        '<div class="tg-msg-footer">' +
-                            (msg.file_size ? '<span class="tg-msg-size">' + (msg.size_formatted || '') + '</span>' : '') +
-                            (msg.duration && ctype !== 'voice' && ctype !== 'audio' ? '<span class="tg-msg-duration">' + (msg.duration_formatted || '') + '</span>' : '') +
-                            (msg.width && msg.height ? '<span class="tg-msg-res">' + msg.width + '×' + msg.height + '</span>' : '') +
-                            (msg.grouped_id && ctype !== 'album' ? '<a href="/album/' + msg.grouped_id + '" class="tg-album-tag">📚 Альбом</a>' : '') +
-                        '</div>';
-                    feed.appendChild(msgDiv);
+                    var ctype = msg.type_label || 'text';
+                    var icon = icons[msg.content_type] || '📦';
+                    var dt = ctype.replace(/_/g, ' ').replace(/\b\w/g, function(l){return l.toUpperCase()});
+                    var m = '';
+                    if (ctype === 'photo') m = '<img src="/media/'+msg.file_path+'" class="tg-media-img" loading="lazy" onclick="openLightbox(\'/media/'+msg.file_path+'\')">';
+                    else if (ctype==='video'||ctype==='gif'||ctype==='round_video') { var p=msg.thumbnail_path?' poster="/thumbnail/'+msg.message_id+'"':''; m='<video controls class="tg-media-video" preload="metadata"'+p+'><source src="/media/'+msg.file_path+'" type="video/mp4"></video>'; }
+                    else if (ctype==='voice') m='<div class="tg-voice-block"><div class="tg-voice-icon">🎤</div><div class="tg-voice-info"><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio><span class="tg-voice-meta">Голосовое сообщение'+(msg.duration?' · '+(msg.duration_formatted||''):'')+'</span></div></div>';
+                    else if (ctype==='audio') { var f=msg.file_path?msg.file_path.split('/').pop():'Аудио'; m='<div class="tg-audio-block"><div class="tg-audio-icon">🎵</div><div class="tg-audio-info"><div class="tg-audio-name">'+f+'</div><audio controls preload="metadata"><source src="/media/'+msg.file_path+'"></audio></div></div>'; }
+                    else if (ctype==='sticker'||ctype==='custom_emoji') m='<img src="/media/'+msg.file_path+'" class="tg-sticker" loading="lazy">';
+                    else if (ctype==='document') { var f=msg.file_path?msg.file_path.split('/').pop():'Документ'; m='<a href="/media/'+msg.file_path+'" class="tg-doc-block" download><div class="tg-doc-icon">📄</div><div class="tg-doc-info"><div class="tg-doc-name">'+f+'</div><div class="tg-doc-size">'+(msg.size_formatted||'')+'</div></div><div class="tg-doc-dl">⬇</div></a>'; }
+                    else if (ctype==='album'&&msg.grouped_id) m='<a href="/album/'+msg.grouped_id+'" class="tg-album-link">📚 Открыть альбом</a>';
+                    var d = document.createElement('div');
+                    d.className = 'tg-message';
+                    d.innerHTML = '<div class="tg-msg-header"><div class="tg-msg-avatar">'+icon+'</div><div class="tg-msg-meta"><span class="tg-msg-type">'+dt+'</span><span class="tg-msg-date">'+(msg.date_formatted||'')+'</span>'+(msg.original_chat_title?'<span class="tg-msg-chat">из '+msg.original_chat_title+'</span>':'')+'</div><div class="tg-msg-actions"><a href="/message/'+msg.message_id+'" class="tg-action-link">🔗</a><a href="tg://local_message?id='+msg.message_id+'" class="tg-action-link">📱</a></div></div><div class="tg-msg-media">'+m+'</div>'+(msg.text?'<div class="tg-msg-text">'+msg.text+'</div>':'')+'<div class="tg-msg-footer">'+(msg.file_size?'<span>'+(msg.size_formatted||'')+'</span>':'')+(msg.duration&&ctype!=='voice'&&ctype!=='audio'?'<span>'+(msg.duration_formatted||'')+'</span>':'')+(msg.width&&msg.height?'<span>'+msg.width+'×'+msg.height+'</span>':'')+(msg.grouped_id&&ctype!=='album'?'<a href="/album/'+msg.grouped_id+'" class="tg-album-tag">📚 Альбом</a>':'')+'</div>';
+                    feed.appendChild(d);
                 });
-
-                // Обновляем кнопку
-                if (data.has_next && data.next_cursor) {
-                    loadMoreBtn.dataset.nextCursor = data.next_cursor;
-                    loadMoreBtn.textContent = 'Загрузить ещё ↓';
-                    loadMoreBtn.disabled = false;
-                } else {
-                    loadMoreBtn.remove();
-                }
-            } else {
-                loadMoreBtn.remove();
-            }
-        } catch (e) {
-            console.error(e);
-            loadMoreBtn.textContent = 'Ошибка, попробуйте ещё раз';
-            loadMoreBtn.disabled = false;
-        } finally {
-            loading = false;
-        }
+                if (data.has_next && data.next_cursor) { btn.dataset.nextCursor = data.next_cursor; btn.textContent = 'Загрузить ещё ↓'; btn.disabled = false; }
+                else btn.remove();
+            } else btn.remove();
+        } catch(e) { btn.textContent = 'Ошибка'; btn.disabled = false; }
+        finally { loading = false; }
     });
 })();
 </script>

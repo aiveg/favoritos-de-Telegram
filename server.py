@@ -24,7 +24,8 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.templating import Jinja2Templates
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from db import Database, ContentType
 from config import config
@@ -37,10 +38,14 @@ db = Database(config.db_path)
 # FastAPI приложение
 app = FastAPI(title="Favorites Archive", version="1.0.0")
 
-# Шаблоны
+# Jinja2 окружение (без кеширования, напрямую)
 templates_dir = Path(__file__).parent / "templates"
 templates_dir.mkdir(exist_ok=True)
-templates = Jinja2Templates(directory=str(templates_dir))
+jinja_env = Environment(
+    loader=FileSystemLoader(str(templates_dir)),
+    autoescape=select_autoescape(["html", "xml"]),
+    auto_reload=True,
+)
 
 # Статика
 static_dir = Path(__file__).parent / "static"
@@ -70,13 +75,9 @@ def format_date(date_str: str | None) -> str:
     if not date_str:
         return ""
     try:
-        tz = None
-        # Простой парсинг ISO строки
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=dt_timezone.utc)
-        # Пробуем конвертировать в часовой пояс из конфига
-        # Для простоты используем UTC+3 (Moscow)
         dt = dt + timedelta(hours=3)
         return dt.strftime("%d.%m.%Y %H:%M")
     except Exception:
@@ -105,39 +106,37 @@ def format_duration(seconds: float | None) -> str:
     return f"{m}:{s:02d}"
 
 
-# Шаблонные фильтры
-templates.env.filters["format_date"] = format_date
-templates.env.filters["format_size"] = format_size
-templates.env.filters["format_duration"] = format_duration
-templates.env.filters["content_type_label"] = ContentType.label
+# Фильтры
+jinja_env.filters["format_date"] = format_date
+jinja_env.filters["format_size"] = format_size
+jinja_env.filters["format_duration"] = format_duration
+jinja_env.filters["content_type_label"] = ContentType.label
 
-def dict_to_query(d: dict, overrides: dict = None, exclude: list = None, except_key: str = None) -> str:
-    """Формирует query string из словаря параметров."""
-    from urllib.parse import urlencode
-    params = dict(d)
-    # Удаляем None и пустые
-    params = {k: v for k, v in params.items() if v is not None and v != ""}
-    # Удаляем исключённые ключи
-    if exclude:
-        for k in exclude:
-            params.pop(k, None)
-    if except_key:
-        params.pop(except_key, None)
-    # Применяем переопределения
-    if overrides:
-        for k, v in overrides.items():
-            if v is None:
-                params.pop(k, None)
-            else:
-                params[k] = v
-    return urlencode(params)
+_ICON_MAP = {
+    0: "🖼️", 1: "🎬", 2: "🎤", 3: "🎵",
+    4: "📄", 5: "😜", 6: "✨", 7: "🔵",
+    8: "😀", 9: "📝", 10: "📚",
+}
 
-templates.env.filters["dict_to_query"] = dict_to_query
+def icon_for_filter(content_type):
+    try:
+        return _ICON_MAP.get(int(content_type), "📦")
+    except (TypeError, ValueError):
+        return "📦"
+
+jinja_env.filters["icon_for"] = icon_for_filter
+
+
+def render_template(name: str, context: dict) -> HTMLResponse:
+    """Рендерит Jinja2 шаблон и возвращает HTMLResponse."""
+    template = jinja_env.get_template(name)
+    html = template.render(**context)
+    return HTMLResponse(content=html)
 
 
 # ==================== Роуты ====================
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def index(
     request: Request,
     cursor: int | None = None,
@@ -153,11 +152,9 @@ async def index(
     has_text: str | None = None,
     auth: bool = Depends(auth_required),
 ):
-    """Главная страница с карточками."""
     if per_page is None:
         per_page = config.items_per_page
 
-    # Конвертация filter_type в int enum
     filter_type_int = None
     if filter_type:
         filter_type_int = ContentType.from_label(filter_type)
@@ -165,49 +162,22 @@ async def index(
             filter_type_int = None
 
     messages, has_next, next_cursor = db.get_messages(
-        cursor=cursor,
-        direction=direction,
-        per_page=per_page,
-        sort=sort,
-        order=order,
-        filter_type=filter_type_int,
-        date_from=date_from,
-        date_to=date_to,
-        search=search,
-        tag=tag,
-        has_text=has_text,
+        cursor=cursor, direction=direction, per_page=per_page,
+        sort=sort, order=order, filter_type=filter_type_int,
+        date_from=date_from, date_to=date_to,
+        search=search, tag=tag, has_text=has_text,
     )
 
-    # Предыдущий курсор (для пагинации назад)
-    prev_cursor = None
-    has_prev = False
-    if cursor is not None:
-        # Запрашиваем в обратном направлении для проверки наличия предыдущей страницы
-        prev_dir = "newer" if direction == "older" else "older"
-        _, has_prev, _ = db.get_messages(
-            cursor=cursor,
-            direction=prev_dir,
-            per_page=1,
-            sort=sort,
-            order=order,
-            filter_type=filter_type_int,
-            date_from=date_from,
-            date_to=date_to,
-            search=search,
-            tag=tag,
-            has_text=has_text,
-        )
-        if has_prev and messages:
-            prev_cursor = messages[0]["message_id"]
-
-    # Все теги для фильтра
     all_tags = db.get_all_tags()
-
-    # Общее количество (приблизительно)
     total = db.count()
 
-    # Текущие параметры для URL
-    query_params = {
+    return render_template("index.html", {
+        "request": request,
+        "messages": messages,
+        "has_next": has_next,
+        "next_cursor": next_cursor,
+        "all_tags": all_tags,
+        "total": total,
         "per_page": per_page,
         "sort": sort,
         "order": order,
@@ -217,118 +187,58 @@ async def index(
         "search": search,
         "tag": tag,
         "has_text": has_text,
-    }
-
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "messages": messages,
-            "has_next": has_next,
-            "has_prev": has_prev,
-            "next_cursor": next_cursor,
-            "prev_cursor": prev_cursor,
-            "direction": direction,
-            "all_tags": all_tags,
-            "total": total,
-            "query_params": query_params,
-            "filter_type": filter_type,
-            "ContentType": ContentType,
-        },
-    )
+        "ContentType": ContentType,
+    })
 
 
-@app.get("/message/{message_id}", response_class=HTMLResponse)
+@app.get("/message/{message_id}")
 async def view_message(request: Request, message_id: int, auth: bool = Depends(auth_required)):
-    """Страница отдельного сообщения."""
     msg = db.get_message(message_id)
     if not msg:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
-
     tags = db.get_tags_for_message(message_id)
-    return templates.TemplateResponse(
-        "message.html",
-        {
-            "request": request,
-            "message": msg,
-            "tags": tags,
-        },
-    )
+    return render_template("message.html", {"request": request, "message": msg, "tags": tags})
 
 
-@app.get("/album/{grouped_id}", response_class=HTMLResponse)
+@app.get("/album/{grouped_id}")
 async def view_album(request: Request, grouped_id: int, auth: bool = Depends(auth_required)):
-    """Просмотр альбома."""
     messages = db.get_album_messages(grouped_id)
     if not messages:
         raise HTTPException(status_code=404, detail="Альбом не найден")
-
-    return templates.TemplateResponse(
-        "album.html",
-        {
-            "request": request,
-            "messages": messages,
-            "grouped_id": grouped_id,
-        },
-    )
+    return render_template("album.html", {"request": request, "messages": messages, "grouped_id": grouped_id})
 
 
 @app.get("/media/{full_path:path}")
 async def serve_media(full_path: str, auth: bool = Depends(auth_required)):
-    """Отдача медиафайлов."""
     file_path = os.path.join(config.media_dir, full_path)
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Файл не найден")
-
-    # Определяем Content-Type
     ext = full_path.rsplit(".", 1)[-1].lower() if "." in full_path else "bin"
     content_types = {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "gif": "image/gif",
-        "webp": "image/webp",
-        "mp4": "video/mp4",
-        "webm": "video/webm",
-        "ogg": "audio/ogg",
-        "mp3": "audio/mpeg",
+        "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+        "gif": "image/gif", "webp": "image/webp", "mp4": "video/mp4",
+        "webm": "video/webm", "ogg": "audio/ogg", "mp3": "audio/mpeg",
         "pdf": "application/pdf",
     }
-    media_type = content_types.get(ext, "application/octet-stream")
-
-    return FileResponse(
-        file_path,
-        media_type=media_type,
-    )
+    return FileResponse(file_path, media_type=content_types.get(ext, "application/octet-stream"))
 
 
 @app.get("/thumbnail/{message_id}")
 async def serve_thumbnail(message_id: int, auth: bool = Depends(auth_required)):
-    """Отдача thumbnail."""
     msg = db.get_message(message_id)
     if not msg or not msg.get("thumbnail_path"):
         raise HTTPException(status_code=404, detail="Thumbnail не найден")
-
     thumb_path = os.path.join(config.media_dir, msg["thumbnail_path"])
     if not os.path.exists(thumb_path):
         raise HTTPException(status_code=404, detail="Thumbnail не найден на диске")
-
     return FileResponse(thumb_path, media_type="image/jpeg")
 
 
-@app.get("/stats", response_class=HTMLResponse)
+@app.get("/stats")
 async def stats(request: Request, auth: bool = Depends(auth_required)):
-    """Dashboard со статистикой."""
     stats_data = db.get_stats()
     all_tags = db.get_all_tags()
-    return templates.TemplateResponse(
-        "stats.html",
-        {
-            "request": request,
-            "stats": stats_data,
-            "all_tags": all_tags,
-        },
-    )
+    return render_template("stats.html", {"request": request, "stats": stats_data, "all_tags": all_tags})
 
 
 @app.get("/api/messages")
@@ -347,7 +257,6 @@ async def api_messages(
     has_text: str | None = None,
     auth: bool = Depends(auth_required),
 ):
-    """JSON API для AJAX-подгрузки."""
     filter_type_int = None
     if filter_type:
         filter_type_int = ContentType.from_label(filter_type)
@@ -355,32 +264,19 @@ async def api_messages(
             filter_type_int = None
 
     messages, has_next, next_cursor = db.get_messages(
-        cursor=cursor,
-        direction=direction,
-        per_page=per_page,
-        sort=sort,
-        order=order,
-        filter_type=filter_type_int,
-        date_from=date_from,
-        date_to=date_to,
-        search=search,
-        tag=tag,
-        has_text=has_text,
+        cursor=cursor, direction=direction, per_page=per_page,
+        sort=sort, order=order, filter_type=filter_type_int,
+        date_from=date_from, date_to=date_to,
+        search=search, tag=tag, has_text=has_text,
     )
 
-    # Добавляем форматированные поля
     for msg in messages:
         msg["date_formatted"] = format_date(msg.get("date"))
         msg["size_formatted"] = format_size(msg.get("file_size"))
         msg["duration_formatted"] = format_duration(msg.get("duration"))
         msg["type_label"] = ContentType.label(msg.get("content_type", 9))
 
-    return {
-        "messages": messages,
-        "has_next": has_next,
-        "next_cursor": next_cursor,
-        "count": len(messages),
-    }
+    return {"messages": messages, "has_next": has_next, "next_cursor": next_cursor, "count": len(messages)}
 
 
 @app.get("/export")
@@ -393,63 +289,37 @@ async def export_zip(
     tag: str | None = None,
     auth: bool = Depends(auth_required),
 ):
-    """Экспорт результатов фильтра в ZIP-архив."""
     filter_type_int = None
     if filter_type:
         filter_type_int = ContentType.from_label(filter_type)
         if filter_type_int == -1:
             filter_type_int = None
 
-    # Получаем все сообщения по фильтру (без пагинации, до 10000)
     messages, _, _ = db.get_messages(
-        per_page=10000,
-        filter_type=filter_type_int,
-        date_from=date_from,
-        date_to=date_to,
-        search=search,
-        tag=tag,
+        per_page=10000, filter_type=filter_type_int,
+        date_from=date_from, date_to=date_to, search=search, tag=tag,
     )
 
-    # Создаём ZIP в памяти
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        # CSV с метаданными
         csv_buffer = io.StringIO()
         writer = csv.writer(csv_buffer)
-        writer.writerow([
-            "message_id", "date", "content_type", "text", "file_path",
-            "file_size", "duration", "width", "height", "original_chat", "original_sender"
-        ])
+        writer.writerow(["message_id","date","content_type","text","file_path","file_size","duration","width","height","original_chat","original_sender"])
         for msg in messages:
-            writer.writerow([
-                msg.get("message_id"),
-                msg.get("date"),
-                ContentType.label(msg.get("content_type", 9)),
-                (msg.get("text") or "")[:200],
-                msg.get("file_path"),
-                msg.get("file_size"),
-                msg.get("duration"),
-                msg.get("width"),
-                msg.get("height"),
-                msg.get("original_chat_title"),
-                msg.get("original_sender"),
-            ])
+            writer.writerow([msg.get("message_id"), msg.get("date"), ContentType.label(msg.get("content_type",9)),
+                (msg.get("text") or "")[:200], msg.get("file_path"), msg.get("file_size"),
+                msg.get("duration"), msg.get("width"), msg.get("height"),
+                msg.get("original_chat_title"), msg.get("original_sender")])
         zf.writestr("metadata.csv", csv_buffer.getvalue())
-
-        # Добавляем файлы
         for msg in messages:
             if msg.get("file_path"):
                 fpath = os.path.join(config.media_dir, msg["file_path"])
                 if os.path.exists(fpath):
-                    arcname = f"files/{os.path.basename(msg['file_path'])}"
-                    zf.write(fpath, arcname)
+                    zf.write(fpath, f"files/{os.path.basename(msg['file_path'])}")
 
     buffer.seek(0)
-    return StreamingResponse(
-        buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=favorites_export.zip"},
-    )
+    return StreamingResponse(buffer, media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=favorites_export.zip"})
 
 
 @app.get("/export/json")
@@ -463,7 +333,6 @@ async def export_json(
     format: str = "json",
     auth: bool = Depends(auth_required),
 ):
-    """Экспорт метаданных в JSON или CSV."""
     filter_type_int = None
     if filter_type:
         filter_type_int = ContentType.from_label(filter_type)
@@ -471,15 +340,10 @@ async def export_json(
             filter_type_int = None
 
     messages, _, _ = db.get_messages(
-        per_page=10000,
-        filter_type=filter_type_int,
-        date_from=date_from,
-        date_to=date_to,
-        search=search,
-        tag=tag,
+        per_page=10000, filter_type=filter_type_int,
+        date_from=date_from, date_to=date_to, search=search, tag=tag,
     )
 
-    # Убираем внутренний id
     for msg in messages:
         msg.pop("id", None)
 
@@ -489,11 +353,8 @@ async def export_json(
             writer = csv.DictWriter(output, fieldnames=messages[0].keys())
             writer.writeheader()
             writer.writerows(messages)
-        return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=favorites_export.csv"},
-        )
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=favorites_export.csv"})
 
     return JSONResponse(
         content={"count": len(messages), "messages": messages},
@@ -503,15 +364,12 @@ async def export_json(
 
 @app.get("/rss")
 async def rss_feed(request: Request, auth: bool = Depends(auth_required)):
-    """RSS-фид последних сообщений."""
     messages, _, _ = db.get_messages(per_page=20, sort="date", order="desc")
-
     rss = Element("rss", version="2.0")
     channel = SubElement(rss, "channel")
     SubElement(channel, "title").text = "Favorites Archive"
     SubElement(channel, "description").text = "Saved Messages from Telegram"
     SubElement(channel, "link").text = f"http://{config.server_host}:{config.server_port}/"
-
     for msg in messages:
         item = SubElement(channel, "item")
         SubElement(item, "title").text = (msg.get("text") or "Без текста")[:100]
@@ -520,53 +378,31 @@ async def rss_feed(request: Request, auth: bool = Depends(auth_required)):
         msg_link = f"http://{config.server_host}:{config.server_port}/message/{msg['message_id']}"
         SubElement(item, "link").text = msg_link
         SubElement(item, "guid").text = msg_link
-
     xml_str = minidom.parseString(tostring(rss, "utf-8")).toprettyxml(indent="  ", encoding="utf-8")
-    return StreamingResponse(
-        io.BytesIO(xml_str),
-        media_type="application/rss+xml; charset=utf-8",
-    )
+    return StreamingResponse(io.BytesIO(xml_str), media_type="application/rss+xml; charset=utf-8")
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """Страница входа."""
     if not config.auth_enabled:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request},
-    )
+    return render_template("login.html", {"request": request})
 
 
 @app.post("/login")
-async def login_post(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-):
-    """Обработка входа."""
+async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
     if not secrets.compare_digest(username, config.auth_username) or \
        not secrets.compare_digest(password, config.auth_password):
         return HTMLResponse("<h1>Неверный логин или пароль</h1><a href='/login'>Попробовать снова</a>", status_code=401)
-
     response = RedirectResponse(url="/", status_code=302)
-    # Устанавливаем cookie для простой аутентификации
     response.set_cookie(key="auth", value="1", max_age=86400)
     return response
 
 
 @app.post("/delete")
-async def delete_messages(
-    request: Request,
-    message_ids: str = Form(...),
-    auth: bool = Depends(auth_required),
-):
-    """Массовое удаление сообщений."""
+async def delete_messages(request: Request, message_ids: str = Form(...), auth: bool = Depends(auth_required)):
     ids = [int(x.strip()) for x in message_ids.split(",") if x.strip()]
     files_to_delete = db.delete_messages(ids)
-
-    # Удаляем файлы с диска
     for fpath in files_to_delete:
         abs_path = os.path.join(config.media_dir, fpath)
         if os.path.exists(abs_path):
@@ -574,16 +410,11 @@ async def delete_messages(
                 os.remove(abs_path)
             except Exception as e:
                 logger.error(f"Ошибка удаления {abs_path}: {e}")
-
     if "application/json" in request.headers.get("accept", ""):
         return {"deleted": len(ids), "files_removed": len(files_to_delete)}
-
     return RedirectResponse(url="/", status_code=302)
 
 
-# ==================== Health check ====================
-
 @app.get("/health")
 async def health():
-    """Health check."""
     return {"status": "ok", "messages": db.count()}

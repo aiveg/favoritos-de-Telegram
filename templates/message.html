@@ -3,9 +3,7 @@
 
 {% block content %}
 {% set ctype = message.content_type | content_type_label %}
-{% set icon_map = {'photo': '🖼️', 'video': '🎬', 'voice': '🎤', 'audio': '🎵',
-                   'document': '📄', 'sticker': '😜', 'gif': '✨', 'round_video': '🔵',
-                   'custom_emoji': '😀', 'text': '📝', 'album': '📚'} %}
+{% set icon = message.content_type | icon_for %}
 
 <div class="message-detail">
     <div class="message-header">
@@ -42,7 +40,7 @@
 
             {% elif message.file_path %}
             <div class="file-download">
-                <div class="file-icon">{{ icon_map.get(ctype, '📄') }}</div>
+                <div class="file-icon">{{ icon }}</div>
                 <div class="file-info">
                     <span class="file-name">{{ message.file_path.split('/')[-1] }}</span>
                     <span class="file-size">{{ message.file_size | format_size }}</span>
@@ -52,7 +50,7 @@
 
             {% else %}
             <div class="media-full text-only">
-                {{ icon_map.get('text', '📝') }}
+                {{ icon }}
             </div>
             {% endif %}
         </div>
@@ -66,7 +64,7 @@
 
             <div class="info-row">
                 <span class="info-label">Тип:</span>
-                <span class="info-value">{{ icon_map.get(ctype, '📦') }} {{ ctype }}</span>
+                <span class="info-value">{{ icon }} {{ ctype }}</span>
             </div>
 
             {% if message.file_size %}
