@@ -4,7 +4,7 @@
 {% block content %}
 <div class="album-view">
     <div class="album-header">
-        <a href="/" class="back-link">← Назад</a>
+        <a href="javascript:history.back()" class="back-link" onclick="if(document.referrer===''){this.href='/'}">← Назад</a>
         <h2>📚 Альбом ({{ messages | length }} элементов)</h2>
     </div>
 
@@ -22,12 +22,22 @@
                     <source src="/media/{{ msg.file_path }}">
                 </video>
             </a>
+            {% elif ctype == 'document' and msg.file_path %}
+            <a href="/message/{{ msg.message_id }}">
+                <div class="album-doc-placeholder">📄<br><small>{{ msg.file_path.split('/')[-1][:30] if msg.file_path else 'Документ' }}</small></div>
+            </a>
+            {% else %}
+            <a href="/message/{{ msg.message_id }}">
+                <div class="album-doc-placeholder">{{ msg.content_type | icon_for }}</div>
+            </a>
             {% endif %}
 
             <div class="album-item-info">
-                <span class="album-item-date">{{ msg.date | format_date }}</span>
+                <a href="/message/{{ msg.message_id }}" class="album-item-link">
+                    <span class="album-item-date">{{ msg.date | format_date }}</span>
+                </a>
                 {% if msg.text %}
-                <span class="album-item-text">{{ msg.text[:100] }}</span>
+                <span class="album-item-text">{{ msg.text[:150] }}{% if msg.text | length > 150 %}…{% endif %}</span>
                 {% endif %}
             </div>
         </div>

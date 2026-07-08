@@ -10,24 +10,35 @@
 - [x] Реализовать collector.py (watch-режим + cron-режим)
 - [x] Реализовать server.py (FastAPI, роуты, keyset pagination, фильтрация, поиск)
 - [x] Реализовать cli.py
-- [x] Создать Jinja2-шаблоны (base.html, index.html, message.html, album.html, stats.html, login.html)
-- [x] Создать CSS и JS
-- [x] Установить зависимости python-multipart, aiofiles
-- [x] Протестировать импорты — все компоненты загружаются без ошибок
-- [x] Протестировать БД — создаётся с таблицами, индексами, FTS5
-- [x] Протестировать CLI — stats показывает 0 сообщений (пустая БД)
+- [x] Создать Jinja2-шаблоны и статику
+- [x] Установить зависимости
+- [x] Протестировать
 - [x] Финальный коммит
 
 ### 08.07.2026 02:15 — Исправление: полная синхронизация архива при старте
-- [x] collector.py: добавлен метод sync_all_messages() — полная выгрузка архива
-- [x] watch-режим: сначала sync_all_messages(), потом слушатель новых
-- [x] cron-режим: sync_all_messages() с проверкой min_id
-- [x] Сделать коммит (845b649 fix: watch-режим сначала синхронизирует весь архив)
+- [x] collector.py: sync_all_messages()
+- [x] watch-режим: сначала sync, потом слушатель
+- [x] cron-режим: sync_all_messages()
+- [x] Коммит
 
 ### 08.07.2026 02:38 — Исправление: пути по дате сообщения, UI как Telegram, чистый shutdown
-- [ ] Очистить data/ и media/
-- [ ] collector.py: путь media/ строится от message.date в МСК, а не от datetime.now()
-- [ ] collector.py: чистый выход по Ctrl+C (CancelledError)
-- [ ] Переделать index.html: лента в стиле Telegram вместо сетки карточек
-- [ ] Переделать style.css: стили под Telegram-ленту
-- [ ] Сделать коммит
+- [x] collector.py: путь от message.date в МСК
+- [x] run.py: KeyboardInterrupt + CancelledError
+- [x] index.html + style.css: лента в стиле Telegram
+- [x] Коммит
+
+### 08.07.2026 03:00 — Исправление: Jinja2 unhashable type dict
+- [x] Переход на прямой Environment вместо Jinja2Templates
+- [x] icon_for как фильтр, а не global
+- [x] Коммит
+
+### 08.07.2026 13:05 — Исправление: отступы между постами
+- [x] gap: 0.5rem, border-radius, box-shadow
+- [x] cache-buster ?v=2
+- [x] Коммит
+
+### 08.07.2026 13:29 — Исправление: альбомы кликабельны, кнопка Назад, текст в альбоме
+- [ ] album.html: элементы с фото/видео — превью и ссылки
+- [ ] album.html: кнопка «Назад» → history.back() с fallback
+- [ ] collector.py: проверить определение типа для текстовых сообщений в альбоме
+- [ ] Коммит

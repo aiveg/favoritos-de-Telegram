@@ -61,9 +61,6 @@ def extract_entities(message) -> list[tuple[str, str]]:
 
 def get_content_type(message) -> ContentType:
     """Определить ContentType сообщения."""
-    if message.grouped_id:
-        return ContentType.ALBUM
-
     if message.photo:
         return ContentType.PHOTO
 
