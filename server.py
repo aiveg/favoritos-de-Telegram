@@ -130,12 +130,13 @@ jinja_env.filters["icon_for"] = icon_for_filter
 IS_LOCAL = config.server_host in ("127.0.0.1", "localhost", "0.0.0.0")
 
 def local_file_url(relative_path: str | None) -> str | None:
-    """Возвращает file:// URL для локального файла."""
+    """Возвращает URL для открытия локального файла."""
     if not relative_path or not IS_LOCAL:
         return None
     abs_path = Path(config.media_dir).resolve() / relative_path
     if abs_path.exists():
-        return f"file://{abs_path}"
+        from urllib.parse import quote
+        return f"/open-file?path={quote(str(abs_path))}"
     return None
 
 jinja_env.globals["is_local"] = IS_LOCAL
@@ -157,7 +158,24 @@ def linkify_filter(text: str | None) -> str:
     return _URL_RE.sub(replace_url, text)
 
 jinja_env.filters["linkify"] = linkify_filter
-jinja_env.filters["e"] = lambda t: jinja_env.autoescape and jinja_env.from_string("{{ x }}").render(x=t) or t
+
+# Фильтр подсветки поискового запроса
+def highlight_filter(text: str | None, query: str | None) -> str:
+    """Подсвечивает поисковый запрос жёлтым."""
+    if not text or not query:
+        return text or ""
+    import re
+    # Экранируем спецсимволы, но ищем без учёта регистра
+    escaped = re.escape(query.strip())
+    if not escaped:
+        return text
+    return re.sub(
+        f"({escaped})",
+        r'<mark style="background:#fff3a8;color:#000;padding:0 1px;border-radius:2px">\1</mark>',
+        text,
+        flags=re.IGNORECASE
+    )
+jinja_env.filters["highlight"] = highlight_filter
 
 
 def render_template(name: str, context: dict) -> HTMLResponse:
@@ -456,6 +474,30 @@ async def delete_messages(request: Request, message_ids: str = Form(...), auth: 
     if "application/json" in request.headers.get("accept", ""):
         return {"deleted": len(ids), "files_removed": len(files_to_delete)}
     return RedirectResponse(url="/", status_code=302)
+
+
+@app.get("/open-file")
+async def open_local_file(request: Request, path: str, auth: bool = Depends(auth_required)):
+    """Открыть файл в системном приложении (macOS: open, Linux: xdg-open, Windows: start)."""
+    if not IS_LOCAL:
+        raise HTTPException(status_code=403, detail="Только локально")
+    abs_path = Path(path)
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    if not str(abs_path.resolve()).startswith(str(Path(config.media_dir).resolve())):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    import subprocess
+    import platform
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(["open", str(abs_path)])
+        elif platform.system() == "Windows":
+            os.startfile(str(abs_path))
+        else:
+            subprocess.run(["xdg-open", str(abs_path)])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return HTMLResponse("<script>window.close();</script><p>Файл открыт. <a href='/'>Назад</a></p>")
 
 
 @app.get("/health")
