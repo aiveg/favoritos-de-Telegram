@@ -60,15 +60,19 @@ body {
 
 /* ==================== Navbar ==================== */
 .tg-nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem 1rem;
     background: var(--tg-nav-bg);
     border-bottom: 1px solid var(--tg-border);
     position: sticky;
     top: 0;
     z-index: 100;
+}
+.tg-nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 0.6rem 1rem;
 }
 .tg-nav-brand { font-weight: 700; font-size: 1.1rem; color: var(--tg-text); text-decoration: none; }
 .tg-nav-links { display: flex; gap: 0.8rem; align-items: center; }

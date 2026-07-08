@@ -208,14 +208,23 @@ class Collector:
         filename = get_original_filename(message, content_type)
         abs_path = self._build_file_path(content_type, message_id, filename, message.date)
 
-        # Проверяем существование файла на диске
+        # Проверяем существование файла на диске — сверяем размер
+        expected_size = None
+        if message.file:
+            expected_size = message.file.size
+        elif message.document:
+            expected_size = message.document.size
+
         if os.path.exists(abs_path):
-            logger.info(f"Файл уже существует: {abs_path}")
-            # Вычисляем хеш
-            file_hash = compute_file_hash(abs_path)
-            # Относительный путь от MEDIA_DIR
-            rel_path = os.path.relpath(abs_path, config.media_dir)
-            return rel_path, None, file_hash if file_hash else None
+            actual_size = os.path.getsize(abs_path)
+            if expected_size and actual_size != expected_size:
+                logger.warning(f"Файл {message_id} существует но размер не совпадает (ожидалось {expected_size}, получено {actual_size}) — перекачиваем")
+                os.remove(abs_path)
+            else:
+                logger.info(f"Файл уже существует: {abs_path}")
+                file_hash = compute_file_hash(abs_path)
+                rel_path = os.path.relpath(abs_path, config.media_dir)
+                return rel_path, None, file_hash if file_hash else None
 
         # Скачиваем файл
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)

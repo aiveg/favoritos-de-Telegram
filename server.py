@@ -126,6 +126,39 @@ def icon_for_filter(content_type):
 
 jinja_env.filters["icon_for"] = icon_for_filter
 
+# Определяем, локальный ли запуск
+IS_LOCAL = config.server_host in ("127.0.0.1", "localhost", "0.0.0.0")
+
+def local_file_url(relative_path: str | None) -> str | None:
+    """Возвращает file:// URL для локального файла."""
+    if not relative_path or not IS_LOCAL:
+        return None
+    abs_path = Path(config.media_dir).resolve() / relative_path
+    if abs_path.exists():
+        return f"file://{abs_path}"
+    return None
+
+jinja_env.globals["is_local"] = IS_LOCAL
+jinja_env.globals["local_file_url"] = local_file_url
+
+# Фильтр для кликабельных ссылок
+import re
+_URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
+
+def linkify_filter(text: str | None) -> str:
+    """Делает URL в тексте кликабельными ссылками."""
+    if not text:
+        return ""
+    def replace_url(match):
+        url = match.group(1)
+        # Убираем trailing пунктуацию
+        clean_url = url.rstrip(".,;:!?")
+        return f'<a href="{clean_url}" target="_blank" rel="noopener noreferrer">{clean_url}</a>'
+    return _URL_RE.sub(replace_url, text)
+
+jinja_env.filters["linkify"] = linkify_filter
+jinja_env.filters["e"] = lambda t: jinja_env.autoescape and jinja_env.from_string("{{ x }}").render(x=t) or t
+
 
 def render_template(name: str, context: dict) -> HTMLResponse:
     """Рендерит Jinja2 шаблон и возвращает HTMLResponse."""
@@ -154,6 +187,16 @@ async def index(
 ):
     if per_page is None:
         per_page = config.items_per_page
+
+    # Если есть loaded_up_to — загружаем всё до этого курсора (для восстановления после back из альбома)
+    loaded_up_to = request.query_params.get("loaded_up_to")
+    if loaded_up_to and not cursor:
+        try:
+            cursor = int(loaded_up_to)
+            direction = "older"
+            per_page = 500  # Загружаем много, чтобы покрыть всё подгруженное
+        except ValueError:
+            pass
 
     filter_type_int = None
     if filter_type:

@@ -56,7 +56,7 @@
     {% set fwd_title = msg.forward_chat_title or msg.forward_sender or 'Источник' %}
 
     <!-- Сообщение в чате -->
-    <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}">
+    <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}" data-message-id="{{ msg.message_id }}">
         {% if is_fwd %}
         <!-- Аватарка источника (кликабельная ссылка на оригинал) -->
         <div class="chat-avatar-col">
@@ -120,21 +120,28 @@
                         <span class="doc-dl">⬇</span>
                     </a>
                     {% elif ctype == 'album' and msg.grouped_id %}
-                    <a href="/album/{{ msg.grouped_id }}" class="chat-album-link">📚 Открыть альбом ({{ msg.grouped_id }})</a>
+                    <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-link">📚 Открыть альбом ({{ msg.grouped_id }})</a>
                     {% endif %}
                 </div>
 
                 <!-- Текст -->
                 {% if msg.text %}
-                <div class="chat-text">{{ msg.text }}</div>
+                <div class="chat-text">{{ msg.text | linkify | safe }}</div>
                 {% endif %}
 
                 <!-- Мета (дата, размер) -->
                 <div class="chat-meta">
                     <span class="chat-date">{{ msg.date | format_date }}</span>
-                    {% if msg.file_size %}<span class="chat-size">{{ msg.file_size | format_size }}</span>{% endif %}
+                    {% if msg.file_size %}
+                        {% set loc_url = local_file_url(msg.file_path) %}
+                        {% if loc_url %}
+                        <a href="{{ loc_url }}" class="chat-size chat-local-link" title="Открыть локально">📁 {{ msg.file_size | format_size }}</a>
+                        {% else %}
+                        <span class="chat-size">{{ msg.file_size | format_size }}</span>
+                        {% endif %}
+                    {% endif %}
                     {% if msg.grouped_id and ctype != 'album' %}
-                    <a href="/album/{{ msg.grouped_id }}" class="chat-album-tag">📚 Альбом</a>
+                    <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
                     {% endif %}
                 </div>
             </div>

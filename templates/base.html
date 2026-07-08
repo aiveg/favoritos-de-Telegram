@@ -4,18 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Favorites Archive{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/style.css?v=3">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
 </head>
 <body>
     <header>
         <nav class="tg-nav">
-            <a href="/" class="tg-nav-brand">⭐ Favorites</a>
-            <div class="tg-nav-links">
-                <a href="/">Лента</a>
-                <a href="/stats">Статистика</a>
-                <a href="/rss">RSS</a>
-                <button id="theme-toggle" class="tg-nav-btn" title="Переключить тему">🌓</button>
+            <div class="tg-nav-inner">
+                <a href="/" class="tg-nav-brand">⭐ Favorites</a>
+                <div class="tg-nav-links">
+                    <a href="/">Лента</a>
+                    <a href="/stats">Статистика</a>
+                    <a href="/rss">RSS</a>
+                    <button id="theme-toggle" class="tg-nav-btn" title="Переключить тему">🌓</button>
+                </div>
             </div>
         </nav>
     </header>
@@ -30,6 +32,31 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script>
+    // Сохраняем позицию скролла при уходе со страницы
+    window.addEventListener('beforeunload', function() {
+        sessionStorage.setItem('scrollPos', window.scrollY);
+        // Сохраняем последний видимый message_id
+        var msgs = document.querySelectorAll('.chat-msg-row, .tg-message');
+        var lastId = null;
+        msgs.forEach(function(el) {
+            var rect = el.getBoundingClientRect();
+            if (rect.top < window.innerHeight && rect.bottom > 0) {
+                var dataId = el.getAttribute('data-message-id');
+                if (dataId) lastId = dataId;
+            }
+        });
+        if (lastId) sessionStorage.setItem('lastMsgId', lastId);
+    });
+
+    // Восстанавливаем скролл при загрузке
+    window.addEventListener('load', function() {
+        var savedScroll = sessionStorage.getItem('scrollPos');
+        if (savedScroll && !window.location.search) {
+            window.scrollTo(0, parseInt(savedScroll));
+        }
+    });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
