@@ -175,6 +175,10 @@ def markdown_filter(text: str | None) -> str:
 
 jinja_env.filters["markdown"] = markdown_filter
 
+# Безопасный escape для JS-строк
+import json as _json
+jinja_env.filters["js_escape"] = lambda text: _json.dumps(text) if text else '""'
+
 # Рандомные аватарки животных
 _ANIMALS = ["🐶", "🦊", "🐰", "🐱", "🐼", "🐨", "🐯", "🐮", "🐷", "🐸", "🐵", "🦁", "🐻", "🐹", "🐧", "🦄"]
 

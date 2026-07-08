@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Favorites Archive{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
 </head>
 <body>
     <header>
         <nav class="tg-nav">
             <div class="tg-nav-inner">
-                <a href="/" class="tg-nav-brand">⭐ Favorites</a>
+                <a href="/" class="tg-nav-brand">⭐ Favoritos</a>
                 <div class="tg-nav-links">
                     <a href="/">Лента</a>
                     <a href="/stats">Статистика</a>
@@ -31,7 +31,26 @@
         <div class="lightbox-content" id="lightbox-content"></div>
     </div>
 
+    <button class="scroll-top-btn" id="scroll-top-btn" title="Наверх" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="display:none">⬆</button>
+
     <script src="/static/app.js"></script>
+    <script>
+    // Показывать/скрывать кнопку Наверх
+    window.addEventListener('scroll', function() {
+        var btn = document.getElementById('scroll-top-btn');
+        if (btn) btn.style.display = window.scrollY > 500 ? 'flex' : 'none';
+    });
+    // Копирование текста
+    window.copyText = function(btn, text) {
+        navigator.clipboard.writeText(text).then(function() {
+            btn.textContent = '✅';
+            setTimeout(function() { btn.textContent = '📋'; }, 1500);
+        }).catch(function() {
+            btn.textContent = '❌';
+            setTimeout(function() { btn.textContent = '📋'; }, 1500);
+        });
+    };
+    </script>
     <script>
     // Сохраняем позицию скролла при уходе со страницы
     window.addEventListener('beforeunload', function() {

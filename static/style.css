@@ -212,11 +212,6 @@ footer {
     font-size: 0.85rem;
     overflow: hidden;
 }
-.chat-avatar-animal {
-    width: 36px; height: 36px;
-    font-size: 1.3rem;
-    background: var(--tg-bg);
-}
 .chat-avatar-link { text-decoration: none; display: block; }
 .chat-avatar-link .chat-avatar { transition: transform 0.15s; }
 .chat-avatar-link:hover .chat-avatar { transform: scale(1.15); }
@@ -351,13 +346,44 @@ footer {
 .chat-text del { text-decoration: line-through; opacity: 0.7; }
 .chat-text a { color: var(--tg-accent); text-decoration: underline; }
 
+/* Кнопка копирования текста */
+.chat-copy-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.75rem; opacity: 0.4; padding: 0 0.2rem;
+    color: var(--tg-text-secondary);
+    transition: opacity 0.15s;
+}
+.chat-copy-btn:hover { opacity: 1; }
+
 /* Мета в пузыре (дата, размер) */
 .chat-meta {
     display: flex; flex-wrap: wrap; gap: 0.5rem;
     font-size: 0.68rem; opacity: 0.7;
     justify-content: flex-end;
+    align-items: center;
 }
 .chat-album-tag { font-weight: 500; text-decoration: none; }
+
+/* Кнопка Наверх */
+.scroll-top-btn {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--tg-surface); border: 1px solid var(--tg-border);
+    box-shadow: var(--tg-shadow); cursor: pointer; z-index: 200;
+    font-size: 1rem; display: flex; align-items: center; justify-content: center;
+    opacity: 0.6; transition: opacity 0.2s;
+}
+.scroll-top-btn:hover { opacity: 1; }
+
+/* Футер ленты */
+.tg-feed-footer {
+    text-align: center; padding: 1.5rem 1rem 0.5rem;
+    color: var(--tg-text-secondary); font-size: 0.75rem;
+    display: flex; flex-direction: column; gap: 0.3rem;
+    align-items: center;
+}
+.tg-feed-footer a { color: var(--tg-accent); text-decoration: none; }
+.tg-feed-footer a:hover { text-decoration: underline; }
 
 /* ==================== Empty ==================== */
 .tg-empty { text-align: center; padding: 3rem 1rem; color: var(--tg-text-secondary); }

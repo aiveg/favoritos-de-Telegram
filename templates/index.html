@@ -127,7 +127,10 @@
                 </div>
 
                 {% if msg.text %}
-                <div class="chat-text">{{ msg.text | markdown | highlight(search) | linkify | safe }}</div>
+                <div class="chat-text">
+                    {{ msg.text | markdown | highlight(search) | linkify | safe }}
+                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
+                </div>
                 {% endif %}
 
                 <div class="chat-meta">
@@ -157,6 +160,11 @@
     </button>
 </div>
 {% endif %}
+
+<div class="tg-feed-footer">
+    <span>⭐ Favoritos de Telegram</span>
+    <a href="https://github.com/aiveg/favoritos-de-Telegram" target="_blank">github.com/aiveg/favoritos-de-Telegram</a>
+</div>
 {% endblock %}
 
 {% block scripts %}
