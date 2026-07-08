@@ -323,13 +323,34 @@ class Collector:
             duration = getattr(message.video, 'duration', None)
 
         # Информация о пересланном
-        original_chat_title = None
-        original_sender = None
+        is_forwarded = 0
+        forward_chat_title = None
+        forward_sender = None
+        forward_message_link = None
         if message.fwd_from:
+            is_forwarded = 1
             if message.fwd_from.from_name:
-                original_sender = message.fwd_from.from_name
+                forward_sender = message.fwd_from.from_name
             if hasattr(message.fwd_from, 'from_id') and message.fwd_from.from_id:
-                pass  # Можно получить имя через get_entity, но это доп. запрос
+                try:
+                    chat_id = message.fwd_from.from_id
+                    if hasattr(chat_id, 'channel_id'):
+                        # Имя канала можно попробовать получить
+                        pass
+                except Exception:
+                    pass
+            # Попробуем извлечь название чата из заголовка пересланного сообщения
+            # В Telethon v2 доступно через fwd_from.chat_title, если есть
+            if hasattr(message.fwd_from, 'chat_title') and message.fwd_from.chat_title:
+                forward_chat_title = message.fwd_from.chat_title
+            # Ссылка на оригинальное сообщение
+            if hasattr(message.fwd_from, 'channel_post') and message.fwd_from.channel_post:
+                try:
+                    chat_id_str = str(message.fwd_from.from_id.channel_id) if hasattr(message.fwd_from.from_id, 'channel_id') else None
+                    if chat_id_str:
+                        forward_message_link = f"https://t.me/c/{chat_id_str}/{message.fwd_from.channel_post}"
+                except Exception:
+                    pass
 
         # Вставка в БД
         data = {
@@ -345,8 +366,12 @@ class Collector:
             "grouped_id": grouped_id,
             "width": width,
             "height": height,
-            "original_chat_title": original_chat_title,
-            "original_sender": original_sender,
+            "original_chat_title": None,
+            "original_sender": None,
+            "is_forwarded": is_forwarded,
+            "forward_chat_title": forward_chat_title,
+            "forward_sender": forward_sender,
+            "forward_message_link": forward_message_link,
         }
 
         inserted = self.db.insert_message(data)

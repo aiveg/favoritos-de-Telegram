@@ -184,29 +184,50 @@ footer {
 }
 .tg-message:hover { background: var(--tg-hover); }
 
-/* Заголовок сообщения */
-.tg-msg-header {
+/* --- Своё сообщение (справа) --- */
+.tg-message.tg-own {
+    margin-left: 0;
+    margin-right: 0;
+    border-left: 3px solid var(--tg-accent);
+}
+.tg-own-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 0.6rem;
     margin-bottom: 0.5rem;
 }
-.tg-msg-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: var(--tg-accent-light);
+.tg-own-meta { display: flex; gap: 0.5rem; align-items: center; }
+.tg-own-date { color: var(--tg-text-secondary); font-size: 0.75rem; }
+.tg-own-badge { background: var(--tg-accent-light); color: var(--tg-accent); font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 8px; }
+.tg-own-actions { display: flex; gap: 0.3rem; }
+
+/* --- Пересланное сообщение (слева, с источником) --- */
+.tg-message.tg-forwarded {
+    border-left: 3px solid var(--tg-accent-light);
+}
+.tg-fwd-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    flex-shrink: 0;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--tg-bg);
+    border-radius: 8px;
 }
-.tg-msg-meta { flex: 1; }
-.tg-msg-type { font-weight: 600; font-size: 0.85rem; }
-.tg-msg-date { color: var(--tg-text-secondary); font-size: 0.75rem; margin-left: 0.5rem; }
-.tg-msg-chat { color: var(--tg-accent); font-size: 0.75rem; margin-left: 0.5rem; }
-.tg-msg-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+.tg-fwd-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--tg-accent-light);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; flex-shrink: 0;
+}
+.tg-fwd-info { flex: 1; }
+.tg-fwd-title { font-weight: 600; font-size: 0.82rem; color: var(--tg-accent); display: block; }
+.tg-fwd-date { font-size: 0.7rem; color: var(--tg-text-secondary); }
+.tg-fwd-link { text-decoration: none; color: var(--tg-accent); font-size: 0.9rem; padding: 0.2rem 0.3rem; }
+.tg-fwd-link:hover { background: var(--tg-accent-light); border-radius: 4px; }
+
+/* Универсальные утилиты */
 .tg-action-link { text-decoration: none; font-size: 0.85rem; opacity: 0.5; transition: opacity 0.15s; }
 .tg-action-link:hover { opacity: 1; }
 

@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS messages (
     height INTEGER,
     original_chat_title TEXT,
     original_sender TEXT,
+    is_forwarded INTEGER DEFAULT 0,
+    forward_chat_title TEXT,
+    forward_sender TEXT,
+    forward_message_link TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -201,7 +205,8 @@ class Database:
         fields = [
             "message_id", "date", "content_type", "text", "file_path",
             "thumbnail_path", "file_size", "file_hash", "duration",
-            "grouped_id", "width", "height", "original_chat_title", "original_sender"
+            "grouped_id", "width", "height", "original_chat_title", "original_sender",
+            "is_forwarded", "forward_chat_title", "forward_sender", "forward_message_link"
         ]
         placeholders = ", ".join("?" * len(fields))
         field_names = ", ".join(fields)
