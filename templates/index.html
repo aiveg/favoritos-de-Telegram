@@ -89,9 +89,6 @@
             {% endif %}
 
             <div class="chat-bubble {% if is_fwd %}bubble-from{% else %}bubble-me{% endif %}">
-                {% if msg.text %}
-                <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
-                {% endif %}
                 <div class="chat-media">
                     {% if ctype == 'photo' %}
                     <img src="/media/{{ msg.file_path }}" class="chat-img" loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
@@ -136,6 +133,9 @@
                 {% endif %}
 
                 <div class="chat-meta">
+                    {% if msg.text %}
+                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
+                    {% endif %}
                     <span class="chat-date">{{ msg.date | format_date }}</span>
                     {% if msg.file_size %}
                         {% set loc_url = local_file_url(msg.file_path) %}
