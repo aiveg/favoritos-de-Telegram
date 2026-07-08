@@ -126,7 +126,7 @@
         {% if message.text %}
         <div class="message-text">
             <h3>Текст сообщения</h3>
-            <div class="text-content">{{ message.text | linkify | safe }}</div>
+            <div class="text-content">{{ message.text | markdown | linkify | safe }}</div>
         </div>
         {% endif %}
 

@@ -177,6 +177,26 @@ def highlight_filter(text: str | None, query: str | None) -> str:
     )
 jinja_env.filters["highlight"] = highlight_filter
 
+# Markdown
+_MD_BOLD = re.compile(r'\*\*(.+?)\*\*')
+_MD_ITALIC = re.compile(r'__(.+?)__')
+_MD_CODE = re.compile(r'`([^`\n]+?)`')
+_MD_STRIKE = re.compile(r'~~(.+?)~~')
+_MD_LINK = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+
+def markdown_filter(text: str | None) -> str:
+    if not text:
+        return ""
+    text = text.replace("&", "&").replace("<", "<").replace(">", ">")
+    text = _MD_BOLD.sub(r'<strong>\1</strong>', text)
+    text = _MD_ITALIC.sub(r'<em>\1</em>', text)
+    text = _MD_CODE.sub(r'<code>\1</code>', text)
+    text = _MD_STRIKE.sub(r'<del>\1</del>', text)
+    text = _MD_LINK.sub(r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', text)
+    return text
+
+jinja_env.filters["markdown"] = markdown_filter
+
 
 def render_template(name: str, context: dict) -> HTMLResponse:
     """Рендерит Jinja2 шаблон и возвращает HTMLResponse."""

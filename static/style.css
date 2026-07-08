@@ -337,6 +337,14 @@ footer {
     white-space: pre-wrap; word-break: break-word;
     margin-bottom: 0.25rem;
 }
+.chat-text strong { font-weight: 700; }
+.chat-text em { font-style: italic; }
+.chat-text code {
+    background: var(--tg-code-bg); padding: 0.1rem 0.3rem;
+    border-radius: 4px; font-family: monospace; font-size: 0.85em;
+}
+.chat-text del { text-decoration: line-through; opacity: 0.7; }
+.chat-text a { color: var(--tg-accent); text-decoration: underline; }
 
 /* Мета в пузыре (дата, размер) */
 .chat-meta {

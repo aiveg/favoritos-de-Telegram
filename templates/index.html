@@ -126,7 +126,7 @@
 
                 <!-- Текст -->
                 {% if msg.text %}
-                <div class="chat-text">{{ msg.text | highlight(search) | linkify | safe }}</div>
+                <div class="chat-text">{{ msg.text | markdown | highlight(search) | linkify | safe }}</div>
                 {% endif %}
 
                 <!-- Мета (дата, размер) -->
