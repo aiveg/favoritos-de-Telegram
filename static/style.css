@@ -172,15 +172,16 @@ footer {
 .tg-feed {
     display: flex;
     flex-direction: column;
-    gap: 0; /* Сообщения прилегают border-to-border */
+    gap: 0.5rem;
+    padding: 0.5rem 0;
 }
 .tg-message {
     background: var(--tg-surface);
-    border-bottom: 1px solid var(--tg-border);
+    border-radius: 6px;
     padding: 0.75rem 1rem;
     transition: background 0.15s;
+    box-shadow: var(--tg-shadow);
 }
-.tg-message:first-child { padding-top: 0.75rem; }
 .tg-message:hover { background: var(--tg-hover); }
 
 /* Заголовок сообщения */
