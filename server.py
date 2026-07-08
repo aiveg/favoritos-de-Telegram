@@ -32,13 +32,9 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-# Инициализация БД
 db = Database(config.db_path)
-
-# FastAPI приложение
 app = FastAPI(title="Favorites Archive", version="1.0.0")
 
-# Jinja2 окружение (без кеширования, напрямую)
 templates_dir = Path(__file__).parent / "templates"
 templates_dir.mkdir(exist_ok=True)
 jinja_env = Environment(
@@ -47,31 +43,24 @@ jinja_env = Environment(
     auto_reload=True,
 )
 
-# Статика
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# Basic Auth
 security = HTTPBasic(auto_error=False)
 
 
 def auth_required(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
-    """Проверка Basic Auth, если включена."""
     if not config.auth_enabled:
         return True
     if credentials and secrets.compare_digest(credentials.username, config.auth_username) \
             and secrets.compare_digest(credentials.password, config.auth_password):
         return True
-    raise HTTPException(
-        status_code=401,
-        detail="Unauthorized",
-        headers={"WWW-Authenticate": "Basic realm=\"Favorites Archive\""},
-    )
+    raise HTTPException(status_code=401, detail="Unauthorized",
+        headers={"WWW-Authenticate": "Basic realm=\"Favorites Archive\""})
 
 
 def format_date(date_str: str | None) -> str:
-    """Форматировать дату в часовой пояс из конфигурации."""
     if not date_str:
         return ""
     try:
@@ -85,7 +74,6 @@ def format_date(date_str: str | None) -> str:
 
 
 def format_size(size_bytes: int | None) -> str:
-    """Форматировать размер в читаемый вид."""
     if not size_bytes:
         return ""
     for unit in ("Б", "КБ", "МБ", "ГБ"):
@@ -96,7 +84,6 @@ def format_size(size_bytes: int | None) -> str:
 
 
 def format_duration(seconds: float | None) -> str:
-    """Форматировать длительность."""
     if not seconds:
         return ""
     m, s = divmod(int(seconds), 60)
@@ -106,7 +93,7 @@ def format_duration(seconds: float | None) -> str:
     return f"{m}:{s:02d}"
 
 
-# Фильтры
+# --- Jinja2 Фильтры ---
 jinja_env.filters["format_date"] = format_date
 jinja_env.filters["format_size"] = format_size
 jinja_env.filters["format_duration"] = format_duration
@@ -126,11 +113,9 @@ def icon_for_filter(content_type):
 
 jinja_env.filters["icon_for"] = icon_for_filter
 
-# Определяем, локальный ли запуск
 IS_LOCAL = config.server_host in ("127.0.0.1", "localhost", "0.0.0.0")
 
 def local_file_url(relative_path: str | None) -> str | None:
-    """Возвращает URL для открытия локального файла."""
     if not relative_path or not IS_LOCAL:
         return None
     abs_path = Path(config.media_dir).resolve() / relative_path
@@ -142,30 +127,23 @@ def local_file_url(relative_path: str | None) -> str | None:
 jinja_env.globals["is_local"] = IS_LOCAL
 jinja_env.globals["local_file_url"] = local_file_url
 
-# Фильтр для кликабельных ссылок
 import re
 _URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
 
 def linkify_filter(text: str | None) -> str:
-    """Делает URL в тексте кликабельными ссылками."""
     if not text:
         return ""
     def replace_url(match):
         url = match.group(1)
-        # Убираем trailing пунктуацию
         clean_url = url.rstrip(".,;:!?")
         return f'<a href="{clean_url}" target="_blank" rel="noopener noreferrer">{clean_url}</a>'
     return _URL_RE.sub(replace_url, text)
 
 jinja_env.filters["linkify"] = linkify_filter
 
-# Фильтр подсветки поискового запроса
 def highlight_filter(text: str | None, query: str | None) -> str:
-    """Подсвечивает поисковый запрос жёлтым."""
     if not text or not query:
         return text or ""
-    import re
-    # Экранируем спецсимволы, но ищем без учёта регистра
     escaped = re.escape(query.strip())
     if not escaped:
         return text
@@ -173,11 +151,11 @@ def highlight_filter(text: str | None, query: str | None) -> str:
         f"({escaped})",
         r'<mark style="background:#fff3a8;color:#000;padding:0 1px;border-radius:2px">\1</mark>',
         text,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
+
 jinja_env.filters["highlight"] = highlight_filter
 
-# Markdown
 _MD_BOLD = re.compile(r'\*\*(.+?)\*\*')
 _MD_ITALIC = re.compile(r'__(.+?)__')
 _MD_CODE = re.compile(r'`([^`\n]+?)`')
@@ -197,9 +175,18 @@ def markdown_filter(text: str | None) -> str:
 
 jinja_env.filters["markdown"] = markdown_filter
 
+# Рандомные аватарки животных
+_ANIMALS = ["🐶", "🦊", "🐰", "🐱", "🐼", "🐨", "🐯", "🐮", "🐷", "🐸", "🐵", "🦁", "🐻", "🐹", "🐧", "🦄"]
+
+def animal_avatar(source_title: str | None) -> str:
+    if not source_title:
+        return "🐶"
+    return _ANIMALS[abs(hash(str(source_title))) % len(_ANIMALS)]
+
+jinja_env.globals["animal_avatar"] = animal_avatar
+
 
 def render_template(name: str, context: dict) -> HTMLResponse:
-    """Рендерит Jinja2 шаблон и возвращает HTMLResponse."""
     template = jinja_env.get_template(name)
     html = template.render(**context)
     return HTMLResponse(content=html)
@@ -226,13 +213,12 @@ async def index(
     if per_page is None:
         per_page = config.items_per_page
 
-    # Если есть loaded_up_to — загружаем всё до этого курсора (для восстановления после back из альбома)
     loaded_up_to = request.query_params.get("loaded_up_to")
     if loaded_up_to and not cursor:
         try:
             cursor = int(loaded_up_to)
             direction = "older"
-            per_page = 500  # Загружаем много, чтобы покрыть всё подгруженное
+            per_page = 500
         except ValueError:
             pass
 
@@ -497,8 +483,7 @@ async def delete_messages(request: Request, message_ids: str = Form(...), auth: 
 
 
 @app.get("/open-file")
-async def open_local_file(request: Request, path: str, auth: bool = Depends(auth_required)):
-    """Открыть файл в системном приложении (macOS: open, Linux: xdg-open, Windows: start)."""
+async def open_local_file(request: Request, path: str, open: str = "0", auth: bool = Depends(auth_required)):
     if not IS_LOCAL:
         raise HTTPException(status_code=403, detail="Только локально")
     abs_path = Path(path)
@@ -506,18 +491,45 @@ async def open_local_file(request: Request, path: str, auth: bool = Depends(auth
         raise HTTPException(status_code=404, detail="Файл не найден")
     if not str(abs_path.resolve()).startswith(str(Path(config.media_dir).resolve())):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
-    import subprocess
-    import platform
-    try:
-        if platform.system() == "Darwin":
-            subprocess.run(["open", str(abs_path)])
-        elif platform.system() == "Windows":
-            os.startfile(str(abs_path))
-        else:
-            subprocess.run(["xdg-open", str(abs_path)])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return HTMLResponse("<script>window.close();</script><p>Файл открыт. <a href='/'>Назад</a></p>")
+
+    name = abs_path.name
+    ext = abs_path.suffix.lstrip(".") if abs_path.suffix else ""
+    size = abs_path.stat().st_size
+    size_formatted = format_size(size)
+
+    ext_icons = {
+        "pdf": "📕", "doc": "📘", "docx": "📘", "xls": "📗", "xlsx": "📗",
+        "txt": "📄", "csv": "📊", "json": "📋", "zip": "📦", "rar": "📦",
+        "jpg": "🖼️", "jpeg": "🖼️", "png": "🖼️", "gif": "🖼️", "webp": "🖼️",
+        "mp4": "🎬", "mov": "🎬", "avi": "🎬", "mkv": "🎬",
+        "mp3": "🎵", "ogg": "🎵", "wav": "🎵", "m4a": "🎵",
+    }
+    icon = ext_icons.get(ext.lower(), "📁")
+
+    opened = False
+    if open == "1":
+        import subprocess
+        import platform
+        try:
+            if platform.system() == "Darwin":
+                subprocess.run(["open", str(abs_path)])
+            elif platform.system() == "Windows":
+                os.startfile(str(abs_path))
+            else:
+                subprocess.run(["xdg-open", str(abs_path)])
+            opened = True
+        except Exception:
+            pass
+
+    return render_template("open_file.html", {
+        "request": request,
+        "name": name,
+        "ext": ext,
+        "size_formatted": size_formatted,
+        "icon": icon,
+        "path": str(abs_path),
+        "opened": opened,
+    })
 
 
 @app.get("/health")

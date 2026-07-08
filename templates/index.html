@@ -2,13 +2,14 @@
 {% block title %}Favorites — Telegram Archive{% endblock %}
 
 {% block content %}
-<!-- Поиск и фильтры -->
 <div class="tg-search-bar">
     <form method="get" action="/" class="tg-search-form" id="filters-form">
         <input type="search" name="search" class="tg-search-input"
-               placeholder="Поиск..." value="{{ search or '' }}">
+               placeholder="Поиск..." value="{{ search or '' }}"
+               onchange="this.form.submit()">
+
         <div class="tg-filter-row">
-            <select name="filter_type" class="tg-select">
+            <select name="filter_type" class="tg-select" onchange="this.form.submit()">
                 <option value="">Все типы</option>
                 <option value="photo" {% if filter_type == 'photo' %}selected{% endif %}>🖼️ Фото</option>
                 <option value="video" {% if filter_type == 'video' %}selected{% endif %}>🎬 Видео</option>
@@ -19,34 +20,42 @@
                 <option value="round_video" {% if filter_type == 'round_video' %}selected{% endif %}>🔵 Кружочки</option>
                 <option value="text" {% if filter_type == 'text' %}selected{% endif %}>📝 Текст</option>
             </select>
-            <select name="sort" class="tg-select">
-                <option value="date" {% if sort == 'date' %}selected{% endif %}>По дате</option>
-                <option value="size" {% if sort == 'size' %}selected{% endif %}>По размеру</option>
+
+            <select name="order" class="tg-select" onchange="this.form.submit()">
+                <option value="desc" {% if order == 'desc' %}selected{% endif %}>Сначала новые</option>
+                <option value="asc" {% if order == 'asc' %}selected{% endif %}>Сначала старые</option>
             </select>
-            <select name="order" class="tg-select">
-                <option value="desc" {% if order == 'desc' %}selected{% endif %}>Новые → старые</option>
-                <option value="asc" {% if order == 'asc' %}selected{% endif %}>Старые → новые</option>
+
+            <select name="has_text" class="tg-select tg-text-filter" onchange="this.form.submit()">
+                <option value="">Текст: любой</option>
+                <option value="yes" {% if has_text == 'yes' %}selected{% endif %}>Текст: есть</option>
+                <option value="no" {% if has_text == 'no' %}selected{% endif %}>Текст: нет</option>
             </select>
-            <input type="date" name="date_from" value="{{ date_from or '' }}" class="tg-date" title="С даты">
-            <input type="date" name="date_to" value="{{ date_to or '' }}" class="tg-date" title="По дату">
-            <button type="submit" class="tg-btn tg-btn-primary">Применить</button>
+
+            <input type="date" name="date_from" value="{{ date_from or '' }}" class="tg-date" title="С даты" onchange="this.form.submit()">
+            <input type="date" name="date_to" value="{{ date_to or '' }}" class="tg-date" title="По дату" onchange="this.form.submit()">
+
+            <button type="button" class="tg-btn tg-btn-secondary tg-tags-toggle" id="tags-toggle" onclick="toggleTags()">
+                🏷️ Теги
+            </button>
+
             <a href="/" class="tg-btn tg-btn-secondary">Сбросить</a>
         </div>
+
         {% if all_tags %}
-        <div class="tg-tags">
-            {% for t, cnt in all_tags[:20] %}
-            <a href="/?tag={{ t }}&sort={{ sort }}&order={{ order }}&per_page={{ per_page }}&filter_type={{ filter_type or '' }}&search={{ search or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}&has_text={{ has_text or '' }}"
-               class="tg-tag {% if tag == t %}active{% endif %}">#{{ t }}</a>
+        <div class="tg-tags" id="tags-cloud" style="display:none">
+            {% for t, cnt in all_tags[:30] %}
+            <a href="?tag={{ t }}&sort={{ sort }}&order={{ order }}&per_page={{ per_page }}&filter_type={{ filter_type or '' }}&search={{ search or '' }}&date_from={{ date_from or '' }}&date_to={{ date_to or '' }}&has_text={{ has_text or '' }}"
+               class="tg-tag {% if tag == t %}active{% endif %}">#{{ t }} <small>{{ cnt }}</small></a>
             {% endfor %}
         </div>
         {% endif %}
     </form>
 </div>
 
-<!-- Лента в виде чата -->
 <div class="chat-feed" id="chat-feed">
     {% if not messages %}
-    <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code> для загрузки архива</p></div>
+    <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code></p></div>
     {% endif %}
 
     {% for msg in messages %}
@@ -55,24 +64,21 @@
     {% set is_fwd = msg.is_forwarded == 1 %}
     {% set fwd_title = msg.forward_chat_title or msg.forward_sender or 'Источник' %}
 
-    <!-- Сообщение в чате -->
     <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}" data-message-id="{{ msg.message_id }}">
         {% if is_fwd %}
-        <!-- Аватарка источника (кликабельная ссылка на оригинал) -->
         <div class="chat-avatar-col">
             {% if msg.forward_message_link %}
             <a href="{{ msg.forward_message_link }}" target="_blank" class="chat-avatar-link" title="Открыть оригинал в {{ fwd_title }}">
-                <div class="chat-avatar">{{ icon }}</div>
+                <div class="chat-avatar chat-avatar-animal">{{ animal_avatar(fwd_title) }}</div>
             </a>
             {% else %}
-            <div class="chat-avatar">{{ icon }}</div>
+            <div class="chat-avatar chat-avatar-animal">{{ animal_avatar(fwd_title) }}</div>
             {% endif %}
         </div>
         {% endif %}
 
         <div class="chat-bubble-col">
             {% if is_fwd %}
-            <!-- Имя источника над сообщением -->
             <div class="chat-sender-row">
                 {% if msg.forward_message_link %}
                 <a href="{{ msg.forward_message_link }}" target="_blank" class="chat-sender-link">{{ fwd_title }}</a>
@@ -82,16 +88,12 @@
             </div>
             {% endif %}
 
-            <!-- Пузырь сообщения -->
             <div class="chat-bubble {% if is_fwd %}bubble-from{% else %}bubble-me{% endif %}">
-                <!-- Медиа -->
                 <div class="chat-media">
                     {% if ctype == 'photo' %}
-                    <img src="/media/{{ msg.file_path }}" class="chat-img"
-                         loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
+                    <img src="/media/{{ msg.file_path }}" class="chat-img" loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
                     {% elif ctype in ('video', 'gif', 'round_video') %}
-                    <video controls class="chat-video" preload="metadata"
-                           {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
+                    <video controls class="chat-video" preload="metadata" {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
                         <source src="/media/{{ msg.file_path }}" type="video/mp4">
                     </video>
                     {% elif ctype == 'voice' %}
@@ -124,12 +126,10 @@
                     {% endif %}
                 </div>
 
-                <!-- Текст -->
                 {% if msg.text %}
                 <div class="chat-text">{{ msg.text | markdown | highlight(search) | linkify | safe }}</div>
                 {% endif %}
 
-                <!-- Мета (дата, размер) -->
                 <div class="chat-meta">
                     <span class="chat-date">{{ msg.date | format_date }}</span>
                     {% if msg.file_size %}
@@ -161,6 +161,17 @@
 
 {% block scripts %}
 <script>
+function toggleTags() {
+    var cloud = document.getElementById('tags-cloud');
+    if (cloud.style.display === 'none' || cloud.style.display === '') {
+        cloud.style.display = 'flex';
+        document.getElementById('tags-toggle').textContent = '🏷️ Скрыть';
+    } else {
+        cloud.style.display = 'none';
+        document.getElementById('tags-toggle').textContent = '🏷️ Теги';
+    }
+}
+
 (function() {
     var btn = document.getElementById('load-more-btn');
     if (!btn) return;
@@ -184,17 +195,19 @@
                     var isFwd = msg.is_forwarded == 1;
                     var fwdTitle = msg.forward_chat_title || msg.forward_sender || 'Источник';
 
-                    // Аватарка
                     var avatarHtml = '';
                     if (isFwd) {
-                        var avatar = '<div class="chat-avatar">' + icon + '</div>';
+                        var animalEmoji = ['🐶','🦊','🐰','🐱','🐼','🐨','🐯','🐮','🐷','🐸','🐵','🦁','🐻','🐹','🐧','🦄'];
+                        var hash = 0;
+                        for (var i = 0; i < fwdTitle.length; i++) { hash = ((hash << 5) - hash) + fwdTitle.charCodeAt(i); hash |= 0; }
+                        var animal = animalEmoji[Math.abs(hash) % animalEmoji.length];
+                        var avatar = '<div class="chat-avatar chat-avatar-animal">' + animal + '</div>';
                         if (msg.forward_message_link) {
-                            avatar = '<a href="' + msg.forward_message_link + '" target="_blank" class="chat-avatar-link" title="Открыть оригинал в ' + fwdTitle + '"><div class="chat-avatar">' + icon + '</div></a>';
+                            avatar = '<a href="' + msg.forward_message_link + '" target="_blank" class="chat-avatar-link" title="Открыть оригинал в ' + fwdTitle + '">' + avatar + '</a>';
                         }
                         avatarHtml = '<div class="chat-avatar-col">' + avatar + '</div>';
                     }
 
-                    // Имя отправителя
                     var senderHtml = '';
                     if (isFwd) {
                         if (msg.forward_message_link) {
@@ -204,7 +217,6 @@
                         }
                     }
 
-                    // Медиа
                     var mediaHtml = '';
                     if (ctype === 'photo') {
                         mediaHtml = '<img src="/media/'+msg.file_path+'" class="chat-img" loading="lazy" onclick="openLightbox(\'/media/'+msg.file_path+'\')">';
@@ -225,10 +237,7 @@
                         mediaHtml = '<a href="/album/'+msg.grouped_id+'" class="chat-album-link">📚 Открыть альбом ('+msg.grouped_id+')</a>';
                     }
 
-                    // Текст
                     var textHtml = msg.text ? '<div class="chat-text">' + msg.text + '</div>' : '';
-
-                    // Мета
                     var metaHtml = '<span class="chat-date">' + (msg.date_formatted||'') + '</span>';
                     if (msg.size_formatted) metaHtml += '<span class="chat-size">' + msg.size_formatted + '</span>';
                     if (msg.grouped_id && ctype !== 'album') metaHtml += '<a href="/album/'+msg.grouped_id+'" class="chat-album-tag">📚 Альбом</a>';

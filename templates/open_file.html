@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Файл открыт — Favorites</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .open-file-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--tg-bg);
+        }
+        .open-file-card {
+            background: var(--tg-surface);
+            border-radius: 20px;
+            padding: 3rem 2rem;
+            text-align: center;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: var(--tg-shadow);
+        }
+        .open-file-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        .open-file-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--tg-text);
+            word-break: break-all;
+            margin-bottom: 0.3rem;
+        }
+        .open-file-meta {
+            font-size: 0.85rem;
+            color: var(--tg-text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        .open-file-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .open-file-actions .tg-btn {
+            padding: 0.6rem 1.5rem;
+            font-size: 0.9rem;
+        }
+        .open-file-done {
+            color: var(--tg-accent);
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="open-file-page">
+        <div class="open-file-card">
+            <div class="open-file-icon">{{ icon }}</div>
+            <div class="open-file-name">{{ name }}</div>
+            <div class="open-file-meta">
+                {% if size_formatted %}{{ size_formatted }}{% endif %}
+                {% if size_formatted and ext %} · {% endif %}
+                {% if ext %}{{ ext | upper }}{% endif %}
+            </div>
+            <div class="open-file-actions">
+                <a href="/" class="tg-btn tg-btn-secondary">← Назад</a>
+                <a href="/open-file?path={{ path | urlencode }}&open=1" class="tg-btn tg-btn-primary">📂 Открыть снова</a>
+            </div>
+            {% if opened %}
+            <div class="open-file-done">✅ Файл открыт в системном приложении</div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
