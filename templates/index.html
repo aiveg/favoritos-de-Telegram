@@ -38,6 +38,14 @@
             <button type="button" class="tg-btn tg-btn-secondary tg-tags-toggle" id="tags-toggle" onclick="toggleTags()">
                 🏷️ Теги
             </button>
+            {% if messages %}
+            <button type="button" class="tg-btn tg-btn-secondary" id="delete-mode-btn" onclick="toggleDeleteMode()">
+                🗑 Удалить
+            </button>
+            <button type="button" class="tg-btn tg-btn-primary" id="delete-confirm-btn" style="display:none" onclick="confirmDelete()">
+                Удалить (<span id="delete-count">0</span>)
+            </button>
+            {% endif %}
             <a href="/" class="tg-btn tg-btn-secondary">Сбросить</a>
         </div>
 
@@ -52,12 +60,6 @@
     </form>
 </div>
 
-{% if messages %}
-<div class="tg-delete-bar" style="display:flex; justify-content:flex-end; padding:0.5rem 1rem; gap:0.5rem">
-    <button id="delete-selected" class="tg-btn tg-btn-secondary" disabled onclick="return false">🗑 Удалить выбранные</button>
-</div>
-{% endif %}
-
 <div class="chat-feed" id="chat-feed">
     {% if not messages %}
     <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code></p></div>
@@ -71,7 +73,7 @@
     {% set text_length = msg.text | length if msg.text else 0 %}
     {% set text_truncated = msg.text[:500] if msg.text and text_length > 500 else msg.text %}
 
-    <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}" data-message-id="{{ msg.message_id }}">
+    <div class="chat-msg-row {% if is_fwd %}chat-from{% else %}chat-me{% endif %}" data-message-id="{{ msg.message_id }}" onclick="onMsgClick(event, this)">
         {% if is_fwd %}
         <div class="chat-avatar-col">
             {% if msg.forward_message_link %}
@@ -81,10 +83,6 @@
             {% else %}
             <div class="chat-avatar chat-avatar-animal">{{ animal_avatar(fwd_title) }}</div>
             {% endif %}
-        </div>
-        {% else %}
-        <div class="chat-avatar-col">
-            <div class="chat-avatar chat-avatar-animal">⭐</div>
         </div>
         {% endif %}
 
@@ -163,8 +161,10 @@
                     {% endif %}
                 </div>
             </div>
+        </div>
 
-            <input type="checkbox" class="chat-checkbox" value="{{ msg.message_id }}" style="margin-top:0.15rem; margin-left:0.25rem; cursor:pointer" onclick="updateDeleteButton()" title="Выбрать для удаления">
+        <div class="chat-check-col" style="display:none">
+            <input type="checkbox" class="chat-checkbox" value="{{ msg.message_id }}" onclick="event.stopPropagation(); updateDeleteCount()">
         </div>
     </div>
     {% endfor %}
@@ -185,6 +185,8 @@
 
 {% block scripts %}
 <script>
+var deleteMode = false;
+
 function toggleTags() {
     var cloud = document.getElementById('tags-cloud');
     if (cloud.style.display === 'none' || cloud.style.display === '') {
@@ -194,6 +196,52 @@ function toggleTags() {
         cloud.style.display = 'none';
         document.getElementById('tags-toggle').textContent = '🏷️ Теги';
     }
+}
+
+function toggleDeleteMode() {
+    deleteMode = !deleteMode;
+    var cols = document.querySelectorAll('.chat-check-col');
+    var btn = document.getElementById('delete-mode-btn');
+    var confirmBtn = document.getElementById('delete-confirm-btn');
+    if (deleteMode) {
+        cols.forEach(function(c) { c.style.display = 'flex'; });
+        btn.textContent = '✖ Отмена';
+        confirmBtn.style.display = 'inline-block';
+        updateDeleteCount();
+    } else {
+        cols.forEach(function(c) { c.style.display = 'none'; });
+        btn.textContent = '🗑 Удалить';
+        confirmBtn.style.display = 'none';
+        document.querySelectorAll('.chat-checkbox').forEach(function(cb) { cb.checked = false; });
+    }
+}
+
+function onMsgClick(event, row) {
+    if (!deleteMode) return;
+    // Не переключаем если кликнули по кнопке, ссылке, видео, аудио (они внутри баббла)
+    if (event.target.closest('button, a, video, audio, img, input')) return;
+    var cb = row.querySelector('.chat-checkbox');
+    if (cb) { cb.checked = !cb.checked; updateDeleteCount(); }
+}
+
+function updateDeleteCount() {
+    var checked = document.querySelectorAll('.chat-checkbox:checked');
+    var span = document.getElementById('delete-count');
+    if (span) span.textContent = checked.length;
+}
+
+async function confirmDelete() {
+    var checked = document.querySelectorAll('.chat-checkbox:checked');
+    if (checked.length === 0) return;
+    if (!confirm('Удалить ' + checked.length + ' сообщений? Это нельзя отменить.')) return;
+    var ids = Array.from(checked).map(function(c) { return c.value; }).join(',');
+    var formData = new FormData();
+    formData.append('message_ids', ids);
+    try {
+        var resp = await fetch('/delete', { method: 'POST', body: formData });
+        if (resp.ok) { window.location.reload(); }
+        else { alert('Ошибка при удалении'); }
+    } catch(e) { alert('Ошибка: ' + e.message); }
 }
 
 (function() {
@@ -212,7 +260,6 @@ function toggleTags() {
             var data = await resp.json();
             if (data.messages && data.messages.length > 0) {
                 var feed = document.getElementById('chat-feed');
-                var icons = ["🖼️","🎬","🎤","🎵","📄","😜","✨","🔵","😀","📝","📚"];
                 var animals = ['🐶','🦊','🐰','🐱','🐼','🐨','🐯','🐮','🐷','🐸','🐵','🦁','🐻','🐹','🐧','🦄'];
 
                 function escHtml(s) {
@@ -224,15 +271,15 @@ function toggleTags() {
                     var ctype = msg.type_label || 'text';
                     var isFwd = msg.is_forwarded == 1;
 
-                    // Аватарка: своя или животное
-                    var avatarEmoji = '⭐';
+                    // Аватарка только для пересланных
+                    var avatarHtml = '';
                     if (isFwd) {
                         var fwdTitle = msg.forward_chat_title || msg.forward_sender || 'Источник';
                         var hash = 0;
                         for (var i = 0; i < fwdTitle.length; i++) { hash = ((hash << 5) - hash) + fwdTitle.charCodeAt(i); hash |= 0; }
-                        avatarEmoji = animals[Math.abs(hash) % animals.length];
+                        var avatarEmoji = animals[Math.abs(hash) % animals.length];
+                        avatarHtml = '<div class="chat-avatar-col"><div class="chat-avatar chat-avatar-animal">' + avatarEmoji + '</div></div>';
                     }
-                    var avatarHtml = '<div class="chat-avatar-col"><div class="chat-avatar chat-avatar-animal">' + avatarEmoji + '</div></div>';
 
                     // Текст (уже экранирован сервером)
                     var text = msg.text || '';
@@ -270,6 +317,7 @@ function toggleTags() {
                     var row = document.createElement('div');
                     row.className = 'chat-msg-row ' + (isFwd ? 'chat-from' : 'chat-me');
                     row.setAttribute('data-message-id', msg.message_id);
+                    row.setAttribute('onclick', 'onMsgClick(event, this)');
                     row.innerHTML = avatarHtml +
                         '<div class="chat-bubble-col">' +
                         '<div class="chat-bubble ' + (isFwd ? 'bubble-from' : 'bubble-me') + '">' +
@@ -277,7 +325,9 @@ function toggleTags() {
                         textHtml +
                         '<div class="chat-meta">' + metaHtml + '</div>' +
                         '</div>' +
-                        '<input type="checkbox" class="chat-checkbox" value="' + msg.message_id + '" style="margin-top:0.15rem; margin-left:0.25rem; cursor:pointer" onclick="updateDeleteButton()" title="Выбрать для удаления">' +
+                        '</div>' +
+                        '<div class="chat-check-col" style="display:' + (deleteMode ? 'flex' : 'none') + '">' +
+                        '<input type="checkbox" class="chat-checkbox" value="' + msg.message_id + '" onclick="event.stopPropagation(); updateDeleteCount()">' +
                         '</div>';
                     feed.appendChild(row);
                 });
