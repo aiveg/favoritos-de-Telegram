@@ -136,11 +136,7 @@
                 </div>
 
                 {% if msg.text %}
-                <div class="chat-text">{{ text_truncated | markdown | highlight(search) | linkify | safe }}
-                    {% if text_length > 500 %}
-                    <a href="/message/{{ msg.message_id }}" class="chat-readmore">…читать дальше</a>
-                    {% endif %}
-                </div>
+                <div class="chat-text">{{ text_truncated | markdown | highlight(search) | linkify | safe }}{% if text_length > 500 %}…{% endif %}</div>
                 {% endif %}
 
                 <div class="chat-meta">
@@ -155,6 +151,9 @@
                     {% endif %}
                     {% if msg.grouped_id and ctype != 'album' %}
                     <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
+                    {% endif %}
+                    {% if text_length > 500 %}
+                    <a href="/message/{{ msg.message_id }}" class="chat-readmore">читать дальше</a>
                     {% endif %}
                     {% if msg.text %}
                     <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
@@ -312,7 +311,9 @@ async function confirmDelete() {
                     // Метаинформация
                     var metaHtml = '<span class="chat-date">' + (msg.date_formatted||'') + '</span>';
                     if (msg.size_formatted) metaHtml += '<span class="chat-size">' + msg.size_formatted + '</span>';
-                    if (msg.grouped_id && ctype !== 'album') metaHtml += '<a href="/album/'+msg.grouped_id+'" class="chat-album-tag">📚 Альбом</a>';
+                    if (msg.grouped_id && ctype !== 'album') metaHtml += '<a href="/album/'+msg.grouped_id+'?from_msg='+msg.message_id+'" class="chat-album-tag">📚 Альбом</a>';
+                    if (msg.text && msg.text.length > 500) metaHtml += ' <a href="/message/'+msg.message_id+'" class="chat-readmore">читать дальше</a>';
+                    if (msg.text) metaHtml += ' <button class="chat-copy-btn" onclick="copyText(this, ' + JSON.stringify(msg.text) + ')" title="Копировать текст">📋</button>';
 
                     var row = document.createElement('div');
                     row.className = 'chat-msg-row ' + (isFwd ? 'chat-from' : 'chat-me');
