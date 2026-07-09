@@ -286,7 +286,13 @@ async function renderAlbumInline(container, groupedId) {
                 var poster = m.thumbnail_path ? ' poster="/thumbnail/' + m.message_id + '"' : '';
                 cell.innerHTML = '<video controls preload="metadata"' + poster + '><source src="/media/' + m.file_path + '" type="video/mp4"></video>';
             } else {
-                cell.innerHTML = '<img src="/media/' + m.file_path + '" loading="lazy" onclick="openGallery(' + JSON.stringify(mediaUrls) + ',' + idx + ')">';
+                var img = document.createElement('img');
+                img.src = '/media/' + m.file_path;
+                img.loading = 'lazy';
+                (function(urls, i) {
+                    img.addEventListener('click', function() { openGallery(urls, i); });
+                })(mediaUrls, idx);
+                cell.appendChild(img);
             }
             grid.appendChild(cell);
         });
