@@ -388,6 +388,21 @@ async def stats(request: Request, auth: bool = Depends(auth_required)):
     return render_template("stats.html", {"request": request, "stats": stats_data, "all_tags": all_tags})
 
 
+@app.get("/api/album/{grouped_id}")
+async def api_album(grouped_id: int, auth: bool = Depends(auth_required)):
+    try:
+        messages = db.get_album_messages(grouped_id)
+    except Exception as e:
+        logger.error(f"Ошибка БД в API альбома {grouped_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+    result = []
+    for msg in messages:
+        d = dict(msg)
+        d["type_label"] = ContentType.label(d.get("content_type", 9))
+        result.append(d)
+    return {"messages": result}
+
+
 @app.get("/api/messages")
 async def api_messages(
     request: Request,
