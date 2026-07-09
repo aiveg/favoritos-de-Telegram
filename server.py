@@ -6,13 +6,18 @@ import os
 import io
 import csv
 import json
+import html
 import zipfile
 import logging
 import secrets
+import re
+import subprocess
+import platform
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, Request, Query, HTTPException, Depends, Form
 from fastapi.responses import (
@@ -49,6 +54,35 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 security = HTTPBasic(auto_error=False)
 
+# --- Часовой пояс ---
+try:
+    _TZ = ZoneInfo(config.timezone)
+except (ZoneInfoNotFoundError, KeyError):
+    _TZ = ZoneInfo("Europe/Moscow")
+
+_UTC = dt_timezone.utc
+
+
+def _localize_dt(dt: datetime) -> datetime:
+    """Привести datetime к UTC (если наивный) и перевести в часовой пояс конфига."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    return dt.astimezone(_TZ)
+
+
+# --- Безопасный доступ к файлам (Path Traversal protection) ---
+_MEDIA_REAL = os.path.realpath(config.media_dir)
+
+
+def _safe_media_path(relative_path: str) -> str:
+    """Построить абсолютный путь к файлу внутри media_dir, проверив выход за пределы."""
+    candidate = os.path.realpath(os.path.join(config.media_dir, relative_path))
+    if not candidate.startswith(_MEDIA_REAL + os.sep) and candidate != _MEDIA_REAL:
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    return candidate
+
+
+# --- Аутентификация ---
 
 def auth_required(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
     if not config.auth_enabled:
@@ -60,22 +94,23 @@ def auth_required(request: Request, credentials: HTTPBasicCredentials = Depends(
         headers={"WWW-Authenticate": "Basic realm=\"Favorites Archive\""})
 
 
+# --- Фильтры форматирования ---
+
 def format_date(date_str: str | None) -> str:
     if not date_str:
         return ""
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=dt_timezone.utc)
-        dt = dt + timedelta(hours=3)
-        return dt.strftime("%d.%m.%Y %H:%M")
+        return _localize_dt(dt).strftime("%d.%m.%Y %H:%M")
     except Exception:
         return date_str or ""
 
 
 def format_size(size_bytes: int | None) -> str:
-    if not size_bytes:
+    if size_bytes is None:
         return ""
+    if size_bytes == 0:
+        return "0 Б"
     for unit in ("Б", "КБ", "МБ", "ГБ"):
         if size_bytes < 1024:
             return f"{size_bytes:.0f} {unit}" if unit == "Б" else f"{size_bytes:.1f} {unit}"
@@ -84,8 +119,10 @@ def format_size(size_bytes: int | None) -> str:
 
 
 def format_duration(seconds: float | None) -> str:
-    if not seconds:
+    if seconds is None:
         return ""
+    if seconds == 0:
+        return "0:00"
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     if h:
@@ -93,7 +130,6 @@ def format_duration(seconds: float | None) -> str:
     return f"{m}:{s:02d}"
 
 
-# --- Jinja2 Фильтры ---
 jinja_env.filters["format_date"] = format_date
 jinja_env.filters["format_size"] = format_size
 jinja_env.filters["format_duration"] = format_duration
@@ -105,15 +141,18 @@ _ICON_MAP = {
     8: "😀", 9: "📝", 10: "📚",
 }
 
+
 def icon_for_filter(content_type):
     try:
         return _ICON_MAP.get(int(content_type), "📦")
     except (TypeError, ValueError):
         return "📦"
 
+
 jinja_env.filters["icon_for"] = icon_for_filter
 
 IS_LOCAL = config.server_host in ("127.0.0.1", "localhost", "0.0.0.0")
+
 
 def local_file_url(relative_path: str | None) -> str | None:
     if not relative_path or not IS_LOCAL:
@@ -124,11 +163,12 @@ def local_file_url(relative_path: str | None) -> str | None:
         return f"/open-file?path={quote(str(abs_path))}"
     return None
 
+
 jinja_env.globals["is_local"] = IS_LOCAL
 jinja_env.globals["local_file_url"] = local_file_url
 
-import re
 _URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
+
 
 def linkify_filter(text: str | None) -> str:
     if not text:
@@ -136,10 +176,13 @@ def linkify_filter(text: str | None) -> str:
     def replace_url(match):
         url = match.group(1)
         clean_url = url.rstrip(".,;:!?")
-        return f'<a href="{clean_url}" target="_blank" rel="noopener noreferrer">{clean_url}</a>'
+        escaped_url = html.escape(clean_url)
+        return f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_url}</a>'
     return _URL_RE.sub(replace_url, text)
 
+
 jinja_env.filters["linkify"] = linkify_filter
+
 
 def highlight_filter(text: str | None, query: str | None) -> str:
     if not text or not query:
@@ -154,6 +197,7 @@ def highlight_filter(text: str | None, query: str | None) -> str:
         flags=re.IGNORECASE,
     )
 
+
 jinja_env.filters["highlight"] = highlight_filter
 
 _MD_BOLD = re.compile(r'\*\*(.+?)\*\*')
@@ -161,6 +205,7 @@ _MD_ITALIC = re.compile(r'__(.+?)__')
 _MD_CODE = re.compile(r'`([^`\n]+?)`')
 _MD_STRIKE = re.compile(r'~~(.+?)~~')
 _MD_LINK = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+
 
 def markdown_filter(text: str | None) -> str:
     if not text:
@@ -173,27 +218,36 @@ def markdown_filter(text: str | None) -> str:
     text = _MD_LINK.sub(r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', text)
     return text
 
+
 jinja_env.filters["markdown"] = markdown_filter
 
-# Безопасный escape для JS-строк
-import json as _json
-jinja_env.filters["js_escape"] = lambda text: _json.dumps(text) if text else '""'
+jinja_env.filters["js_escape"] = lambda text: json.dumps(text) if text else '""'
 
-# Рандомные аватарки животных
 _ANIMALS = ["🐶", "🦊", "🐰", "🐱", "🐼", "🐨", "🐯", "🐮", "🐷", "🐸", "🐵", "🦁", "🐻", "🐹", "🐧", "🦄"]
+
 
 def animal_avatar(source_title: str | None) -> str:
     if not source_title:
         return "🐶"
     return _ANIMALS[abs(hash(str(source_title))) % len(_ANIMALS)]
 
+
 jinja_env.globals["animal_avatar"] = animal_avatar
 
 
 def render_template(name: str, context: dict) -> HTMLResponse:
     template = jinja_env.get_template(name)
-    html = template.render(**context)
-    return HTMLResponse(content=html)
+    html_content = template.render(**context)
+    return HTMLResponse(content=html_content)
+
+
+# --- Экранирование текста для API (защита от XSS) ---
+
+def _esc(text: str | None) -> str:
+    """Экранировать HTML-сущности в строке."""
+    if not text:
+        return ""
+    return html.escape(text)
 
 
 # ==================== Роуты ====================
@@ -232,15 +286,18 @@ async def index(
         if filter_type_int == -1:
             filter_type_int = None
 
-    messages, has_next, next_cursor = db.get_messages(
-        cursor=cursor, direction=direction, per_page=per_page,
-        sort=sort, order=order, filter_type=filter_type_int,
-        date_from=date_from, date_to=date_to,
-        search=search, tag=tag, has_text=has_text,
-    )
-
-    all_tags = db.get_all_tags()
-    total = db.count()
+    try:
+        messages, has_next, next_cursor = db.get_messages(
+            cursor=cursor, direction=direction, per_page=per_page,
+            sort=sort, order=order, filter_type=filter_type_int,
+            date_from=date_from, date_to=date_to,
+            search=search, tag=tag, has_text=has_text,
+        )
+        all_tags = db.get_all_tags()
+        total = db.count()
+    except Exception as e:
+        logger.error(f"Ошибка БД при загрузке ленты: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
     return render_template("index.html", {
         "request": request,
@@ -264,16 +321,27 @@ async def index(
 
 @app.get("/message/{message_id}")
 async def view_message(request: Request, message_id: int, auth: bool = Depends(auth_required)):
-    msg = db.get_message(message_id)
+    try:
+        msg = db.get_message(message_id)
+    except Exception as e:
+        logger.error(f"Ошибка БД при загрузке сообщения {message_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
     if not msg:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
-    tags = db.get_tags_for_message(message_id)
+    try:
+        tags = db.get_tags_for_message(message_id)
+    except Exception:
+        tags = []
     return render_template("message.html", {"request": request, "message": msg, "tags": tags})
 
 
 @app.get("/album/{grouped_id}")
 async def view_album(request: Request, grouped_id: int, auth: bool = Depends(auth_required)):
-    messages = db.get_album_messages(grouped_id)
+    try:
+        messages = db.get_album_messages(grouped_id)
+    except Exception as e:
+        logger.error(f"Ошибка БД при загрузке альбома {grouped_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
     if not messages:
         raise HTTPException(status_code=404, detail="Альбом не найден")
     return render_template("album.html", {"request": request, "messages": messages, "grouped_id": grouped_id})
@@ -281,7 +349,7 @@ async def view_album(request: Request, grouped_id: int, auth: bool = Depends(aut
 
 @app.get("/media/{full_path:path}")
 async def serve_media(full_path: str, auth: bool = Depends(auth_required)):
-    file_path = os.path.join(config.media_dir, full_path)
+    file_path = _safe_media_path(full_path)
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Файл не найден")
     ext = full_path.rsplit(".", 1)[-1].lower() if "." in full_path else "bin"
@@ -296,10 +364,14 @@ async def serve_media(full_path: str, auth: bool = Depends(auth_required)):
 
 @app.get("/thumbnail/{message_id}")
 async def serve_thumbnail(message_id: int, auth: bool = Depends(auth_required)):
-    msg = db.get_message(message_id)
+    try:
+        msg = db.get_message(message_id)
+    except Exception as e:
+        logger.error(f"Ошибка БД при загрузке thumbnail {message_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
     if not msg or not msg.get("thumbnail_path"):
         raise HTTPException(status_code=404, detail="Thumbnail не найден")
-    thumb_path = os.path.join(config.media_dir, msg["thumbnail_path"])
+    thumb_path = _safe_media_path(msg["thumbnail_path"])
     if not os.path.exists(thumb_path):
         raise HTTPException(status_code=404, detail="Thumbnail не найден на диске")
     return FileResponse(thumb_path, media_type="image/jpeg")
@@ -307,8 +379,12 @@ async def serve_thumbnail(message_id: int, auth: bool = Depends(auth_required)):
 
 @app.get("/stats")
 async def stats(request: Request, auth: bool = Depends(auth_required)):
-    stats_data = db.get_stats()
-    all_tags = db.get_all_tags()
+    try:
+        stats_data = db.get_stats()
+        all_tags = db.get_all_tags()
+    except Exception as e:
+        logger.error(f"Ошибка БД при загрузке статистики: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
     return render_template("stats.html", {"request": request, "stats": stats_data, "all_tags": all_tags})
 
 
@@ -334,18 +410,28 @@ async def api_messages(
         if filter_type_int == -1:
             filter_type_int = None
 
-    messages, has_next, next_cursor = db.get_messages(
-        cursor=cursor, direction=direction, per_page=per_page,
-        sort=sort, order=order, filter_type=filter_type_int,
-        date_from=date_from, date_to=date_to,
-        search=search, tag=tag, has_text=has_text,
-    )
+    try:
+        messages, has_next, next_cursor = db.get_messages(
+            cursor=cursor, direction=direction, per_page=per_page,
+            sort=sort, order=order, filter_type=filter_type_int,
+            date_from=date_from, date_to=date_to,
+            search=search, tag=tag, has_text=has_text,
+        )
+    except Exception as e:
+        logger.error(f"Ошибка БД в API /api/messages: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
     for msg in messages:
         msg["date_formatted"] = format_date(msg.get("date"))
         msg["size_formatted"] = format_size(msg.get("file_size"))
         msg["duration_formatted"] = format_duration(msg.get("duration"))
         msg["type_label"] = ContentType.label(msg.get("content_type", 9))
+        # XSS-защита: экранируем пользовательский контент
+        msg["text"] = _esc(msg.get("text"))
+        msg["forward_chat_title"] = _esc(msg.get("forward_chat_title"))
+        msg["forward_sender"] = _esc(msg.get("forward_sender"))
+        if msg.get("file_path"):
+            msg["file_path"] = _esc(msg["file_path"])
 
     return {"messages": messages, "has_next": has_next, "next_cursor": next_cursor, "count": len(messages)}
 
@@ -366,27 +452,43 @@ async def export_zip(
         if filter_type_int == -1:
             filter_type_int = None
 
-    messages, _, _ = db.get_messages(
-        per_page=10000, filter_type=filter_type_int,
-        date_from=date_from, date_to=date_to, search=search, tag=tag,
-    )
+    limit = config.export_max_items if config.export_max_items > 0 else 100000
+
+    try:
+        messages, has_more, _ = db.get_messages(
+            per_page=limit, filter_type=filter_type_int,
+            date_from=date_from, date_to=date_to, search=search, tag=tag,
+        )
+    except Exception as e:
+        logger.error(f"Ошибка БД при экспорте: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         csv_buffer = io.StringIO()
         writer = csv.writer(csv_buffer)
-        writer.writerow(["message_id","date","content_type","text","file_path","file_size","duration","width","height","original_chat","original_sender"])
+        writer.writerow(["message_id", "date", "content_type", "text", "file_path",
+                          "file_size", "duration", "width", "height",
+                          "original_chat", "original_sender"])
         for msg in messages:
-            writer.writerow([msg.get("message_id"), msg.get("date"), ContentType.label(msg.get("content_type",9)),
-                (msg.get("text") or "")[:200], msg.get("file_path"), msg.get("file_size"),
-                msg.get("duration"), msg.get("width"), msg.get("height"),
-                msg.get("original_chat_title"), msg.get("original_sender")])
+            writer.writerow([
+                msg.get("message_id"), msg.get("date"),
+                ContentType.label(msg.get("content_type", 9)),
+                (msg.get("text") or "")[:200], msg.get("file_path"),
+                msg.get("file_size"), msg.get("duration"),
+                msg.get("width"), msg.get("height"),
+                msg.get("original_chat_title"), msg.get("original_sender"),
+            ])
         zf.writestr("metadata.csv", csv_buffer.getvalue())
+        file_count = 0
         for msg in messages:
             if msg.get("file_path"):
-                fpath = os.path.join(config.media_dir, msg["file_path"])
+                fpath = _safe_media_path(msg["file_path"])
                 if os.path.exists(fpath):
-                    zf.write(fpath, f"files/{os.path.basename(msg['file_path'])}")
+                    basename = os.path.basename(msg["file_path"])
+                    arcname = f"files/{msg['message_id']}_{basename}"
+                    zf.write(fpath, arcname)
+                    file_count += 1
 
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/zip",
@@ -410,10 +512,16 @@ async def export_json(
         if filter_type_int == -1:
             filter_type_int = None
 
-    messages, _, _ = db.get_messages(
-        per_page=10000, filter_type=filter_type_int,
-        date_from=date_from, date_to=date_to, search=search, tag=tag,
-    )
+    limit = config.export_max_items if config.export_max_items > 0 else 100000
+
+    try:
+        messages, _, _ = db.get_messages(
+            per_page=limit, filter_type=filter_type_int,
+            date_from=date_from, date_to=date_to, search=search, tag=tag,
+        )
+    except Exception as e:
+        logger.error(f"Ошибка БД при экспорте JSON/CSV: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
     for msg in messages:
         msg.pop("id", None)
@@ -435,20 +543,39 @@ async def export_json(
 
 @app.get("/rss")
 async def rss_feed(request: Request, auth: bool = Depends(auth_required)):
-    messages, _, _ = db.get_messages(per_page=20, sort="date", order="desc")
+    try:
+        messages, _, _ = db.get_messages(per_page=20, sort="date", order="desc")
+    except Exception as e:
+        logger.error(f"Ошибка БД при генерации RSS: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+
+    # Определяем схему (http/https) из заголовков запроса
+    scheme = request.headers.get("X-Forwarded-Proto", "http")
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or f"{config.server_host}:{config.server_port}"
+    base_url = f"{scheme}://{host}"
+
     rss = Element("rss", version="2.0")
     channel = SubElement(rss, "channel")
     SubElement(channel, "title").text = "Favorites Archive"
     SubElement(channel, "description").text = "Saved Messages from Telegram"
-    SubElement(channel, "link").text = f"http://{config.server_host}:{config.server_port}/"
+    SubElement(channel, "link").text = f"{base_url}/"
+
     for msg in messages:
         item = SubElement(channel, "item")
-        SubElement(item, "title").text = (msg.get("text") or "Без текста")[:100]
+        title_text = (msg.get("text") or "Без текста")[:100]
+        SubElement(item, "title").text = title_text
         SubElement(item, "description").text = f"Тип: {ContentType.label(msg.get('content_type', 9))}"
-        SubElement(item, "pubDate").text = msg.get("date", "")
-        msg_link = f"http://{config.server_host}:{config.server_port}/message/{msg['message_id']}"
+        # RFC-822 дата
+        try:
+            dt = datetime.fromisoformat((msg.get("date") or "").replace("Z", "+00:00"))
+            dt_utc = dt.astimezone(dt_timezone.utc)
+            SubElement(item, "pubDate").text = dt_utc.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        except Exception:
+            SubElement(item, "pubDate").text = msg.get("date", "")
+        msg_link = f"{base_url}/message/{msg['message_id']}"
         SubElement(item, "link").text = msg_link
         SubElement(item, "guid").text = msg_link
+
     xml_str = minidom.parseString(tostring(rss, "utf-8")).toprettyxml(indent="  ", encoding="utf-8")
     return StreamingResponse(io.BytesIO(xml_str), media_type="application/rss+xml; charset=utf-8")
 
@@ -466,16 +593,29 @@ async def login_post(request: Request, username: str = Form(...), password: str 
        not secrets.compare_digest(password, config.auth_password):
         return HTMLResponse("<h1>Неверный логин или пароль</h1><a href='/login'>Попробовать снова</a>", status_code=401)
     response = RedirectResponse(url="/", status_code=302)
-    response.set_cookie(key="auth", value="1", max_age=86400)
+    response.set_cookie(
+        key="auth", value="1",
+        max_age=config.cookie_max_age,
+        httponly=True,
+        samesite="lax",
+    )
     return response
 
 
 @app.post("/delete")
 async def delete_messages(request: Request, message_ids: str = Form(...), auth: bool = Depends(auth_required)):
     ids = [int(x.strip()) for x in message_ids.split(",") if x.strip()]
-    files_to_delete = db.delete_messages(ids)
+    try:
+        files_to_delete = db.delete_messages(ids)
+    except Exception as e:
+        logger.error(f"Ошибка БД при удалении: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+
     for fpath in files_to_delete:
-        abs_path = os.path.join(config.media_dir, fpath)
+        try:
+            abs_path = _safe_media_path(fpath)
+        except HTTPException:
+            continue
         if os.path.exists(abs_path):
             try:
                 os.remove(abs_path)
@@ -512,8 +652,6 @@ async def open_local_file(request: Request, path: str, open: str = "0", auth: bo
 
     opened = False
     if open == "1":
-        import subprocess
-        import platform
         try:
             if platform.system() == "Darwin":
                 subprocess.run(["open", str(abs_path)])
@@ -538,4 +676,4 @@ async def open_local_file(request: Request, path: str, open: str = "0", auth: bo
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "messages": db.count()}
+    return {"status": "ok"}
