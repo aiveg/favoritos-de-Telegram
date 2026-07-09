@@ -165,7 +165,7 @@ _MD_LINK = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
 def markdown_filter(text: str | None) -> str:
     if not text:
         return ""
-    text = text.replace("&", "&").replace("<", "<").replace(">", ">")
+    text = text.replace("<", "<").replace(">", ">")
     text = _MD_BOLD.sub(r'<strong>\1</strong>', text)
     text = _MD_ITALIC.sub(r'<em>\1</em>', text)
     text = _MD_CODE.sub(r'<code>\1</code>', text)
