@@ -24,7 +24,7 @@ def setup_logging(name: str, log_file: str):
 
     # Файловый handler с ротацией
     file_handler = RotatingFileHandler(
-        log_file, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        log_file, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count, encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
 

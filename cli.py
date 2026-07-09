@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import zipfile
 
 from db import Database, ContentType
@@ -90,8 +91,10 @@ def cmd_export(args):
             print(f"Неизвестный тип: {args.filter_type}")
             sys.exit(1)
 
+    limit = config.export_max_items if config.export_max_items > 0 else 100000
+
     messages, _, _ = db.get_messages(
-        per_page=10000,
+        per_page=limit,
         filter_type=filter_type_int,
         date_from=args.date_from,
         date_to=args.date_to,
@@ -120,15 +123,17 @@ def cmd_export(args):
     elif args.format == "zip":
         output = args.output or "export.zip"
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
-            # CSV внутри zip
-            csv_name = "metadata.csv"
-            csv_path = f"/tmp/{csv_name}"
-            with open(csv_path, "w", encoding="utf-8", newline="") as f:
+            # CSV внутри zip — через временный файл
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", encoding="utf-8", delete=False, newline="") as tmp:
+                csv_path = tmp.name
                 if messages:
-                    writer = csv.DictWriter(f, fieldnames=messages[0].keys())
+                    writer = csv.DictWriter(tmp, fieldnames=messages[0].keys())
                     writer.writeheader()
                     writer.writerows(messages)
-            zf.write(csv_path, csv_name)
+            try:
+                zf.write(csv_path, "metadata.csv")
+            finally:
+                os.unlink(csv_path)
 
             # Файлы
             file_count = 0
@@ -136,10 +141,10 @@ def cmd_export(args):
                 if msg.get("file_path"):
                     fpath = os.path.join(config.media_dir, msg["file_path"])
                     if os.path.exists(fpath):
-                        arcname = f"files/{os.path.basename(msg['file_path'])}"
+                        basename = os.path.basename(msg["file_path"])
+                        arcname = f"files/{msg['message_id']}_{basename}"
                         zf.write(fpath, arcname)
                         file_count += 1
-            os.remove(csv_path)
 
         print(f"Экспортировано в {output} ({file_count} файлов)")
 
