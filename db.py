@@ -130,18 +130,37 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 
 -- Триггеры для синхронизации FTS
 CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, text, caption) VALUES (new.id, new.text, new.text);
+    INSERT INTO messages_fts(rowid, text, caption) VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.text, ''));
 END;
 
 CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, text, caption) VALUES('delete', old.id, old.text, old.text);
+    INSERT INTO messages_fts(messages_fts, rowid, text, caption) VALUES('delete', old.id, COALESCE(old.text, ''), COALESCE(old.text, ''));
 END;
 
 CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, text, caption) VALUES('delete', old.id, old.text, old.text);
-    INSERT INTO messages_fts(rowid, text, caption) VALUES (new.id, new.text, new.text);
+    INSERT INTO messages_fts(messages_fts, rowid, text, caption) VALUES('delete', old.id, COALESCE(old.text, ''), COALESCE(old.text, ''));
+    INSERT INTO messages_fts(rowid, text, caption) VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.text, ''));
 END;
 """
+
+# Экранирование спецсимволов FTS5 (кавычки и звёздочка)
+_FTS_ESCAPE_TABLE = str.maketrans({
+    '"': '""',
+    '*': ' ',
+})
+
+
+def _sanitize_fts_query(query: str) -> str:
+    """Экранировать спецсимволы FTS5 и обернуть в кавычки."""
+    if not query or not query.strip():
+        return ""
+    # Убираем спецсимволы, ломающие синтаксис FTS5
+    sanitized = query.translate(_FTS_ESCAPE_TABLE).strip()
+    if not sanitized:
+        return ""
+    # Оборачиваем каждое слово в кавычки для точного поиска
+    words = sanitized.split()
+    return " AND ".join(f'"\\"{w}\\""' for w in words)
 
 
 class Database:
@@ -163,17 +182,13 @@ class Database:
 
     @contextmanager
     def _get_conn(self):
-        """Создать новое соединение (write)."""
+        """Создать новое соединение (write-safe, с row_factory)."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
         finally:
             conn.close()
-
-    def get_conn(self):
-        """Получить соединение для чтения (WAL позволяет параллельное чтение)."""
-        return sqlite3.connect(self.db_path).cursor()
 
     # --- Сообщения ---
 
@@ -288,75 +303,82 @@ class Database:
         Получить страницу сообщений с keyset pagination.
         Возвращает: (сообщения, has_next, next_cursor).
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        # Валидация параметров
+        order = order.lower() if order else "desc"
+        if order not in ("asc", "desc"):
+            order = "desc"
 
-        # Базовый SELECT
-        select_clause = "SELECT m.*"
-        from_clause = "FROM messages m"
-        where_clauses = []
-        params = []
-
-        # Фильтр по тегу
-        if tag:
-            from_clause += " INNER JOIN tags t ON m.message_id = t.message_id"
-            where_clauses.append("t.tag = ?")
-            params.append(tag)
-
-        # Поиск через FTS5
-        if search:
-            from_clause += " INNER JOIN messages_fts fts ON m.id = fts.rowid"
-            where_clauses.append("messages_fts MATCH ?")
-            params.append(search)
-
-        # Фильтр по типу
-        if filter_type is not None:
-            where_clauses.append("m.content_type = ?")
-            params.append(filter_type)
-
-        # Фильтр по датам
-        if date_from:
-            where_clauses.append("m.date >= ?")
-            params.append(date_from)
-        if date_to:
-            where_clauses.append("m.date <= ?")
-            params.append(date_to)
-
-        # Фильтр по наличию текста
-        if has_text == "yes":
-            where_clauses.append("m.text IS NOT NULL AND m.text != ''")
-        elif has_text == "no":
-            where_clauses.append("(m.text IS NULL OR m.text = '')")
-
-        # Сортировка
         sort_map = {"date": "m.date", "size": "m.file_size", "type": "m.content_type"}
         sort_field = sort_map.get(sort, "m.date")
-        order_clause = f"ORDER BY {sort_field} {order.upper()}, m.message_id {order.upper()}"
 
-        # Keyset pagination
-        if cursor is not None:
-            if direction == "older":
-                op = "<" if order == "desc" else ">"
-                where_clauses.append(f"m.message_id {op} ?")
-            else:  # newer
-                op = ">" if order == "desc" else "<"
-                where_clauses.append(f"m.message_id {op} ?")
-            params.append(cursor)
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            # Базовый SELECT
+            select_clause = "SELECT m.*"
+            from_clause = "FROM messages m"
+            where_clauses = []
+            params = []
 
-        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-        limit = per_page + 1  # Запрашиваем на 1 больше для определения has_next
+            # Фильтр по тегу
+            if tag:
+                from_clause += " INNER JOIN tags t ON m.message_id = t.message_id"
+                where_clauses.append("t.tag = ?")
+                params.append(tag)
 
-        query = f"{select_clause} {from_clause} {where_sql} {order_clause} LIMIT ?"
-        params.append(limit)
+            # Поиск через FTS5 (с экранированием)
+            if search:
+                sanitized = _sanitize_fts_query(search)
+                if sanitized:
+                    from_clause += " INNER JOIN messages_fts fts ON m.id = fts.rowid"
+                    where_clauses.append("messages_fts MATCH ?")
+                    params.append(sanitized)
 
-        rows = conn.execute(query, params).fetchall()
-        conn.close()
+            # Фильтр по типу
+            if filter_type is not None:
+                where_clauses.append("m.content_type = ?")
+                params.append(filter_type)
 
-        has_next = len(rows) > per_page
-        messages = [dict(r) for r in rows[:per_page]]
-        next_cursor = messages[-1]["message_id"] if (has_next and messages) else None
+            # Фильтр по датам
+            if date_from:
+                where_clauses.append("m.date >= ?")
+                params.append(date_from)
+            if date_to:
+                where_clauses.append("m.date <= ?")
+                params.append(date_to)
 
-        return messages, has_next, next_cursor
+            # Фильтр по наличию текста
+            if has_text == "yes":
+                where_clauses.append("m.text IS NOT NULL AND m.text != ''")
+            elif has_text == "no":
+                where_clauses.append("(m.text IS NULL OR m.text = '')")
+
+            # Keyset pagination
+            if cursor is not None:
+                if direction == "older":
+                    op = "<" if order == "desc" else ">"
+                    where_clauses.append(f"m.message_id {op} ?")
+                else:  # newer
+                    op = ">" if order == "desc" else "<"
+                    where_clauses.append(f"m.message_id {op} ?")
+                params.append(cursor)
+
+            where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+            limit = per_page + 1  # Запрашиваем на 1 больше для определения has_next
+
+            order_clause = f"ORDER BY {sort_field} {order.upper()}, m.message_id {order.upper()}"
+            query = f"{select_clause} {from_clause} {where_sql} {order_clause} LIMIT ?"
+            params.append(limit)
+
+            rows = conn.execute(query, params).fetchall()
+
+            has_next = len(rows) > per_page
+            messages = [dict(r) for r in rows[:per_page]]
+            next_cursor = messages[-1]["message_id"] if (has_next and messages) else None
+
+            return messages, has_next, next_cursor
+        finally:
+            conn.close()
 
     def get_message(self, message_id: int) -> dict | None:
         """Получить одно сообщение по message_id."""
