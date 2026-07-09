@@ -222,6 +222,7 @@ footer {
 /* Колонка с пузырём */
 .chat-bubble-col {
     max-width: 80%;
+    min-width: 120px;
     display: flex;
     flex-direction: column;
 }
