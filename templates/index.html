@@ -133,9 +133,6 @@
                 {% endif %}
 
                 <div class="chat-meta">
-                    {% if msg.text %}
-                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
-                    {% endif %}
                     <span class="chat-date">{{ msg.date | format_date }}</span>
                     {% if msg.file_size %}
                         {% set loc_url = local_file_url(msg.file_path) %}
@@ -147,6 +144,9 @@
                     {% endif %}
                     {% if msg.grouped_id and ctype != 'album' %}
                     <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
+                    {% endif %}
+                    {% if msg.text %}
+                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
                     {% endif %}
                 </div>
             </div>

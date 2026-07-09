@@ -352,6 +352,7 @@ footer {
     font-size: 0.7rem; opacity: 0.4; padding: 0;
     color: var(--tg-text-secondary);
     transition: opacity 0.15s;
+    margin-left: auto;
 }
 .chat-copy-btn:hover { opacity: 1; }
 
