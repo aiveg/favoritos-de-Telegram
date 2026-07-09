@@ -210,7 +210,7 @@ function toggleText(event, link) {
     if (full.style.display === 'none') {
         short.style.display = 'none';
         full.style.display = 'inline';
-        link.textContent = 'свернуть';
+        link.textContent = ' ...свернуть';
     } else {
         short.style.display = 'inline';
         full.style.display = 'none';
@@ -278,6 +278,7 @@ async function renderAlbumInline(container, groupedId) {
         var count = items.length;
         var cols = count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : 2;
         grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+        var mediaUrls = items.map(function(m) { return '/media/' + m.file_path; });
         items.forEach(function(m, idx) {
             var cell = document.createElement('div');
             cell.className = 'album-cell';
@@ -285,7 +286,7 @@ async function renderAlbumInline(container, groupedId) {
                 var poster = m.thumbnail_path ? ' poster="/thumbnail/' + m.message_id + '"' : '';
                 cell.innerHTML = '<video controls preload="metadata"' + poster + '><source src="/media/' + m.file_path + '" type="video/mp4"></video>';
             } else {
-                cell.innerHTML = '<img src="/media/' + m.file_path + '" loading="lazy" onclick="openLightbox(\'/media/' + m.file_path + '\')">';
+                cell.innerHTML = '<img src="/media/' + m.file_path + '" loading="lazy" onclick="openGallery(' + JSON.stringify(mediaUrls) + ',' + idx + ')">';
             }
             grid.appendChild(cell);
         });
