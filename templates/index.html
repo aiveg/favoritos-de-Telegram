@@ -67,7 +67,6 @@
 
     {% for msg in messages %}
     {% set ctype = msg.content_type | content_type_label %}
-    {% set icon = msg.content_type | icon_for %}
     {% set is_fwd = msg.is_forwarded == 1 %}
     {% set fwd_title = msg.forward_chat_title or msg.forward_sender or 'Источник' %}
     {% set text_length = msg.text | length if msg.text else 0 %}
@@ -131,12 +130,20 @@
                         <span class="doc-dl">⬇</span>
                     </a>
                     {% elif ctype == 'album' and msg.grouped_id %}
-                    <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-link">📚 Открыть альбом ({{ msg.grouped_id }})</a>
+                    <div class="album-inline" data-grouped-id="{{ msg.grouped_id }}">📚</div>
                     {% endif %}
                 </div>
 
                 {% if msg.text %}
-                <div class="chat-text">{{ text_truncated | markdown | highlight(search) | linkify | safe }}{% if text_length > 500 %}… <a href="/message/{{ msg.message_id }}" class="chat-readmore">читать дальше</a>{% endif %}</div>
+                <div class="chat-text">
+                    {% if text_length > 500 %}
+                    <span class="text-short">{{ text_truncated | markdown | highlight(search) | linkify | safe }}… </span>
+                    <span class="text-full" style="display:none">{{ msg.text | markdown | highlight(search) | linkify | safe }}</span>
+                    <a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a>
+                    {% else %}
+                    {{ msg.text | markdown | highlight(search) | linkify | safe }}
+                    {% endif %}
+                </div>
                 {% endif %}
 
                 <div class="chat-meta">
@@ -148,9 +155,6 @@
                         {% else %}
                         <span class="chat-size">{{ msg.file_size | format_size }}</span>
                         {% endif %}
-                    {% endif %}
-                    {% if msg.grouped_id and ctype != 'album' %}
-                    <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
                     {% endif %}
                     {% if msg.text %}
                     <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
@@ -194,6 +198,22 @@ function toggleTags() {
     }
 }
 
+function toggleText(event, link) {
+    event.preventDefault();
+    var textDiv = link.parentElement;
+    var short = textDiv.querySelector('.text-short');
+    var full = textDiv.querySelector('.text-full');
+    if (full.style.display === 'none') {
+        short.style.display = 'none';
+        full.style.display = 'inline';
+        link.textContent = 'свернуть';
+    } else {
+        short.style.display = 'inline';
+        full.style.display = 'none';
+        link.textContent = 'читать дальше';
+    }
+}
+
 function toggleDeleteMode() {
     deleteMode = !deleteMode;
     var cols = document.querySelectorAll('.chat-check-col');
@@ -214,7 +234,6 @@ function toggleDeleteMode() {
 
 function onMsgClick(event, row) {
     if (!deleteMode) return;
-    // Не переключаем если кликнули по кнопке, ссылке, видео, аудио (они внутри баббла)
     if (event.target.closest('button, a, video, audio, img, input')) return;
     var cb = row.querySelector('.chat-checkbox');
     if (cb) { cb.checked = !cb.checked; updateDeleteCount(); }
@@ -239,6 +258,45 @@ async function confirmDelete() {
         else { alert('Ошибка при удалении'); }
     } catch(e) { alert('Ошибка: ' + e.message); }
 }
+
+// Рендеринг альбомов встроенной сеткой
+async function renderAlbumInline(container, groupedId) {
+    try {
+        var resp = await fetch('/api/album/' + groupedId);
+        var data = await resp.json();
+        if (!data.messages || data.messages.length === 0) return;
+        var items = data.messages.filter(function(m) {
+            return m.type_label === 'photo' || m.type_label === 'video' || m.type_label === 'round_video' || m.type_label === 'gif';
+        });
+        if (items.length === 0) return;
+        var grid = document.createElement('div');
+        grid.className = 'album-grid';
+        var count = items.length;
+        // Определяем layout: 1, 2, 3 или 4+ элементов
+        var cols = count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : 2;
+        grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+        items.forEach(function(m, idx) {
+            var cell = document.createElement('div');
+            cell.className = 'album-cell';
+            if (m.type_label === 'video' || m.type_label === 'round_video' || m.type_label === 'gif') {
+                var poster = m.thumbnail_path ? ' poster="/thumbnail/' + m.message_id + '"' : '';
+                cell.innerHTML = '<video controls preload="metadata"' + poster + '><source src="/media/' + m.file_path + '" type="video/mp4"></video>';
+            } else {
+                cell.innerHTML = '<img src="/media/' + m.file_path + '" loading="lazy" onclick="openLightbox(\'/media/' + m.file_path + '\')">';
+            }
+            grid.appendChild(cell);
+        });
+        container.innerHTML = '';
+        container.appendChild(grid);
+    } catch(e) { console.error('Album render error:', e); }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.album-inline').forEach(function(el) {
+        var gid = el.getAttribute('data-grouped-id');
+        if (gid) renderAlbumInline(el, gid);
+    });
+});
 
 (function() {
     var btn = document.getElementById('load-more-btn');
@@ -266,6 +324,8 @@ async function confirmDelete() {
                 data.messages.forEach(function(msg) {
                     var ctype = msg.type_label || 'text';
                     var isFwd = msg.is_forwarded == 1;
+                    var textLen = msg.text ? msg.text.length : 0;
+                    var textTrunc = textLen > 500 ? msg.text.substring(0, 500) : (msg.text || '');
 
                     // Аватарка только для пересланных
                     var avatarHtml = '';
@@ -277,11 +337,15 @@ async function confirmDelete() {
                         avatarHtml = '<div class="chat-avatar-col"><div class="chat-avatar chat-avatar-animal">' + avatarEmoji + '</div></div>';
                     }
 
-                    // Текст (уже экранирован сервером)
-                    var text = msg.text || '';
-                    var textTruncated = text.length > 500 ? text.substring(0, 500) + '… ' : text;
-                    var readMoreHtml = text.length > 500 ? '<a href="/message/' + msg.message_id + '" class="chat-readmore">читать дальше</a>' : '';
-                    var textHtml = text ? '<div class="chat-text">' + textTruncated + readMoreHtml + '</div>' : '';
+                    // Текст с раскрытием на месте
+                    var textHtml = '';
+                    if (msg.text) {
+                        if (textLen > 500) {
+                            textHtml = '<div class="chat-text"><span class="text-short">' + escHtml(textTrunc) + '… </span><span class="text-full" style="display:none">' + escHtml(msg.text) + '</span><a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a></div>';
+                        } else {
+                            textHtml = '<div class="chat-text">' + escHtml(msg.text) + '</div>';
+                        }
+                    }
 
                     // Медиа
                     var mediaHtml = '';
@@ -302,13 +366,12 @@ async function confirmDelete() {
                         var f = mp?mp.split('/').pop():'Документ';
                         mediaHtml = '<a href="/media/'+mp+'" class="chat-doc" download><span class="doc-icon">📄</span><div class="doc-info"><span class="doc-name">'+escHtml(f)+'</span><span class="doc-size">'+(msg.size_formatted||'')+'</span></div><span class="doc-dl">⬇</span></a>';
                     } else if (ctype==='album'&&msg.grouped_id) {
-                        mediaHtml = '<a href="/album/'+msg.grouped_id+'" class="chat-album-link">📚 Открыть альбом ('+msg.grouped_id+')</a>';
+                        mediaHtml = '<div class="album-inline" data-grouped-id="' + msg.grouped_id + '">📚</div>';
                     }
 
                     // Метаинформация
                     var metaHtml = '<span class="chat-date">' + (msg.date_formatted||'') + '</span>';
                     if (msg.size_formatted) metaHtml += '<span class="chat-size">' + msg.size_formatted + '</span>';
-                    if (msg.grouped_id && ctype !== 'album') metaHtml += '<a href="/album/'+msg.grouped_id+'?from_msg='+msg.message_id+'" class="chat-album-tag">📚 Альбом</a>';
                     if (msg.text) metaHtml += ' <button class="chat-copy-btn" onclick="copyText(this, ' + JSON.stringify(msg.text) + ')" title="Копировать текст">📋</button>';
 
                     var row = document.createElement('div');
@@ -327,6 +390,12 @@ async function confirmDelete() {
                         '<input type="checkbox" class="chat-checkbox" value="' + msg.message_id + '" onclick="event.stopPropagation(); updateDeleteCount()">' +
                         '</div>';
                     feed.appendChild(row);
+
+                    // Рендерим альбом после вставки в DOM
+                    var albumEl = row.querySelector('.album-inline');
+                    if (albumEl && msg.grouped_id) {
+                        renderAlbumInline(albumEl, msg.grouped_id);
+                    }
                 });
                 if (data.has_next && data.next_cursor) { btn.dataset.nextCursor = data.next_cursor; btn.textContent = 'Загрузить ещё ↓'; btn.disabled = false; }
                 else btn.remove();
