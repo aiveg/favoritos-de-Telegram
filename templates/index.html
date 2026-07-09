@@ -65,7 +65,17 @@
     <div class="tg-empty"><p>📭 Нет сообщений</p><p>Запустите <code>python run.py collect</code></p></div>
     {% endif %}
 
+    {% set shown_groups = namespace(values={}) %}
     {% for msg in messages %}
+    {% set gid = msg.grouped_id or 0 %}
+    {% if gid and shown_groups.values.get(gid|string) %}
+        {# Пропускаем — уже показали как альбом #}
+        {% continue %}
+    {% endif %}
+    {% if gid %}
+        {% set _ = shown_groups.values.update({gid|string: true}) %}
+    {% endif %}
+
     {% set ctype = msg.content_type | content_type_label %}
     {% set is_fwd = msg.is_forwarded == 1 %}
     {% set fwd_title = msg.forward_chat_title or msg.forward_sender or 'Источник' %}
@@ -98,7 +108,9 @@
 
             <div class="chat-bubble {% if is_fwd %}bubble-from{% else %}bubble-me{% endif %}">
                 <div class="chat-media">
-                    {% if ctype == 'photo' %}
+                    {% if gid %}
+                    <div class="album-inline" data-grouped-id="{{ gid }}">📚</div>
+                    {% elif ctype == 'photo' %}
                     <img src="/media/{{ msg.file_path }}" class="chat-img" loading="lazy" onclick="openLightbox('/media/{{ msg.file_path }}')">
                     {% elif ctype in ('video', 'gif', 'round_video') %}
                     <video controls class="chat-video" preload="metadata" {% if msg.thumbnail_path %}poster="/thumbnail/{{ msg.message_id }}"{% endif %}>
@@ -129,21 +141,15 @@
                         </div>
                         <span class="doc-dl">⬇</span>
                     </a>
-                    {% elif ctype == 'album' and msg.grouped_id %}
-                    <div class="album-inline" data-grouped-id="{{ msg.grouped_id }}">📚</div>
                     {% endif %}
                 </div>
 
                 {% if msg.text %}
-                <div class="chat-text">
-                    {% if text_length > 500 %}
-                    <span class="text-short">{{ text_truncated | markdown | highlight(search) | linkify | safe }}… </span>
-                    <span class="text-full" style="display:none">{{ msg.text | markdown | highlight(search) | linkify | safe }}</span>
-                    <a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a>
-                    {% else %}
-                    {{ msg.text | markdown | highlight(search) | linkify | safe }}
-                    {% endif %}
-                </div>
+                <div class="chat-text">{%- if text_length > 500 -%}
+<span class="text-short">{{ text_truncated | markdown | highlight(search) | linkify | safe }}… </span><span class="text-full" style="display:none">{{ msg.text | markdown | highlight(search) | linkify | safe }}</span> <a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a>
+                {%- else -%}
+{{ msg.text | markdown | highlight(search) | linkify | safe }}
+                {%- endif -%}</div>
                 {% endif %}
 
                 <div class="chat-meta">
@@ -186,6 +192,7 @@
 {% block scripts %}
 <script>
 var deleteMode = false;
+var shownGroups = {};
 
 function toggleTags() {
     var cloud = document.getElementById('tags-cloud');
@@ -272,7 +279,6 @@ async function renderAlbumInline(container, groupedId) {
         var grid = document.createElement('div');
         grid.className = 'album-grid';
         var count = items.length;
-        // Определяем layout: 1, 2, 3 или 4+ элементов
         var cols = count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : 2;
         grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
         items.forEach(function(m, idx) {
@@ -291,7 +297,19 @@ async function renderAlbumInline(container, groupedId) {
     } catch(e) { console.error('Album render error:', e); }
 }
 
+// При загрузке страницы: группируем уже отрендеренные альбомы и рендерим сетку
 document.addEventListener('DOMContentLoaded', function() {
+    var gids = {};
+    document.querySelectorAll('.chat-msg-row').forEach(function(row) {
+        var gid = row.getAttribute('data-grouped-id');
+        if (gid) {
+            if (gids[gid]) {
+                row.style.display = 'none';
+            } else {
+                gids[gid] = true;
+            }
+        }
+    });
     document.querySelectorAll('.album-inline').forEach(function(el) {
         var gid = el.getAttribute('data-grouped-id');
         if (gid) renderAlbumInline(el, gid);
@@ -322,12 +340,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 data.messages.forEach(function(msg) {
+                    var gid = msg.grouped_id || 0;
+                    // Пропускаем дубликаты альбомов
+                    if (gid && shownGroups[gid]) return;
+                    if (gid) shownGroups[gid] = true;
+
                     var ctype = msg.type_label || 'text';
                     var isFwd = msg.is_forwarded == 1;
                     var textLen = msg.text ? msg.text.length : 0;
-                    var textTrunc = textLen > 500 ? msg.text.substring(0, 500) : (msg.text || '');
 
-                    // Аватарка только для пересланных
                     var avatarHtml = '';
                     if (isFwd) {
                         var fwdTitle = msg.forward_chat_title || msg.forward_sender || 'Источник';
@@ -337,7 +358,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         avatarHtml = '<div class="chat-avatar-col"><div class="chat-avatar chat-avatar-animal">' + avatarEmoji + '</div></div>';
                     }
 
-                    // Текст с раскрытием на месте (сервер уже экранировал)
                     var textHtml = '';
                     if (msg.text) {
                         if (textLen > 500) {
@@ -347,10 +367,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
 
-                    // Медиа
                     var mediaHtml = '';
                     var mp = msg.file_path || '';
-                    if (ctype === 'photo') {
+                    if (gid) {
+                        mediaHtml = '<div class="album-inline" data-grouped-id="' + gid + '">📚</div>';
+                    } else if (ctype === 'photo') {
                         mediaHtml = '<img src="/media/'+mp+'" class="chat-img" loading="lazy" onclick="openLightbox(\'/media/'+mp+'\')">';
                     } else if (ctype==='video'||ctype==='gif'||ctype==='round_video') {
                         var p = msg.thumbnail_path ? ' poster="/thumbnail/'+msg.message_id+'"' : '';
@@ -365,11 +386,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else if (ctype==='document') {
                         var f = mp?mp.split('/').pop():'Документ';
                         mediaHtml = '<a href="/media/'+mp+'" class="chat-doc" download><span class="doc-icon">📄</span><div class="doc-info"><span class="doc-name">'+escHtml(f)+'</span><span class="doc-size">'+(msg.size_formatted||'')+'</span></div><span class="doc-dl">⬇</span></a>';
-                    } else if (ctype==='album'&&msg.grouped_id) {
-                        mediaHtml = '<div class="album-inline" data-grouped-id="' + msg.grouped_id + '">📚</div>';
                     }
 
-                    // Метаинформация
                     var metaHtml = '<span class="chat-date">' + (msg.date_formatted||'') + '</span>';
                     if (msg.size_formatted) metaHtml += '<span class="chat-size">' + msg.size_formatted + '</span>';
                     if (msg.text) metaHtml += ' <button class="chat-copy-btn" onclick="copyText(this, ' + JSON.stringify(msg.text) + ')" title="Копировать текст">📋</button>';
@@ -391,11 +409,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         '</div>';
                     feed.appendChild(row);
 
-                    // Рендерим альбом после вставки в DOM
-                    var albumEl = row.querySelector('.album-inline');
-                    if (albumEl && msg.grouped_id) {
-                        renderAlbumInline(albumEl, msg.grouped_id);
-                    }
+                    if (gid) renderAlbumInline(row.querySelector('.album-inline'), gid);
                 });
                 if (data.has_next && data.next_cursor) { btn.dataset.nextCursor = data.next_cursor; btn.textContent = 'Загрузить ещё ↓'; btn.disabled = false; }
                 else btn.remove();
