@@ -127,28 +127,26 @@
                 </div>
 
                 {% if msg.text %}
-                <div class="chat-text">
-                    {{ msg.text | markdown | highlight(search) | linkify | safe }}
-                </div>
+                <div class="chat-text">{{- msg.text | markdown | highlight(search) | linkify | safe -}}</div>
                 {% endif %}
 
                 <div class="chat-meta">
                     <span class="chat-date">{{ msg.date | format_date }}</span>
-                    {% if msg.file_size %}
-                        {% set loc_url = local_file_url(msg.file_path) %}
-                        {% if loc_url %}
+                    {%- if msg.file_size -%}
+                        {%- set loc_url = local_file_url(msg.file_path) -%}
+                        {%- if loc_url -%}
                         <a href="{{ loc_url }}" class="chat-size chat-local-link" title="Открыть локально">📁 {{ msg.file_size | format_size }}</a>
-                        {% else %}
+                        {%- else -%}
                         <span class="chat-size">{{ msg.file_size | format_size }}</span>
-                        {% endif %}
-                    {% endif %}
-                    {% if msg.grouped_id and ctype != 'album' %}
+                        {%- endif -%}
+                    {%- endif -%}
+                    {%- if msg.grouped_id and ctype != 'album' -%}
                     <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
-                    {% endif %}
+                    {%- endif -%}
                 </div>
-                {% if msg.text %}
+                {% if msg.text -%}
                 <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
-                {% endif %}
+                {%- endif %}
             </div>
         </div>
     </div>
