@@ -68,13 +68,9 @@
     {% set shown_groups = namespace(values={}) %}
     {% for msg in messages %}
     {% set gid = msg.grouped_id or 0 %}
-    {% if gid and shown_groups.values.get(gid|string) %}
-        {# Пропускаем — уже показали как альбом #}
-        {% continue %}
-    {% endif %}
-    {% if gid %}
-        {% set _ = shown_groups.values.update({gid|string: true}) %}
-    {% endif %}
+    {% set skip = (gid and shown_groups.values.get(gid|string)) or false %}
+    {% if not skip %}
+    {% if gid %}{% set _ = shown_groups.values.update({gid|string: true}) %}{% endif %}
 
     {% set ctype = msg.content_type | content_type_label %}
     {% set is_fwd = msg.is_forwarded == 1 %}
@@ -173,6 +169,7 @@
             <input type="checkbox" class="chat-checkbox" value="{{ msg.message_id }}" onclick="event.stopPropagation(); updateDeleteCount()">
         </div>
     </div>
+    {% endif %}
     {% endfor %}
 </div>
 
@@ -297,19 +294,8 @@ async function renderAlbumInline(container, groupedId) {
     } catch(e) { console.error('Album render error:', e); }
 }
 
-// При загрузке страницы: группируем уже отрендеренные альбомы и рендерим сетку
+// При загрузке страницы: рендерим сетку альбомов
 document.addEventListener('DOMContentLoaded', function() {
-    var gids = {};
-    document.querySelectorAll('.chat-msg-row').forEach(function(row) {
-        var gid = row.getAttribute('data-grouped-id');
-        if (gid) {
-            if (gids[gid]) {
-                row.style.display = 'none';
-            } else {
-                gids[gid] = true;
-            }
-        }
-    });
     document.querySelectorAll('.album-inline').forEach(function(el) {
         var gid = el.getAttribute('data-grouped-id');
         if (gid) renderAlbumInline(el, gid);
