@@ -450,15 +450,12 @@ class Collector:
 
     async def collect_watch(self):
         """
-        Watch-режим: сначала полная синхронизация ВСЕГО архива,
-        затем слушатель новых сообщений в реальном времени.
+        Watch-режим: полная синхронизация + слушатель новых сообщений.
+        Устойчив к разрывам соединения — переподключается с экспоненциальным backoff.
         """
-        # Сначала синхронизируем всё, что уже есть в избранном
-        logger.info("=== НАЧАЛЬНАЯ СИНХРОНИЗАЦИЯ АРХИВА ===")
-        await self.sync_all_messages()
-        logger.info("=== СИНХРОНИЗАЦИЯ ЗАВЕРШЕНА, ЗАПУСК WATCH-РЕЖИМА ===")
+        retry_delay = 30  # Начальная задержка между переподключениями
 
-        # Теперь слушаем новые сообщения
+        # Регистрируем обработчик новых сообщений один раз
         @self.client.on(events.NewMessage(chats='me'))
         async def handler(event):
             try:
@@ -469,8 +466,39 @@ class Collector:
             except Exception as e:
                 logger.error(f"Ошибка обработки нового сообщения: {e}", exc_info=True)
 
-        logger.info("Слушатель запущен, ожидание сообщений...")
-        await self.client.run_until_disconnected()
+        # Сначала синхронизируем весь архив
+        await self.sync_all_messages()
+
+        logger.info("=== WATCH-РЕЖИМ ЗАПУЩЕН ===")
+
+        while True:
+            try:
+                await self.client.run_until_disconnected()
+            except ConnectionError as e:
+                logger.warning(f"Соединение разорвано: {e}")
+            except asyncio.CancelledError:
+                logger.info("Сборщик остановлен (CancelledError)")
+                break
+            except Exception as e:
+                logger.warning(f"Ошибка соединения: {type(e).__name__}: {e}")
+
+            # Переподключение с экспоненциальным backoff
+            logger.info(f"Переподключение через {retry_delay} секунд...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 900)  # Максимум 15 минут
+
+            try:
+                await self.client.connect()
+                # Сбрасываем состояние сессии
+                await self.client.get_me()
+                # Небольшая пауза чтобы сервер Telegram сбросил буфер старых пакетов
+                await asyncio.sleep(5)
+                # Инкрементальная синхронизация пропущенных сообщений
+                await self.sync_all_messages()
+                # Сбрасываем задержку после успешного переподключения
+                retry_delay = 30
+            except Exception as e:
+                logger.error(f"Ошибка переподключения: {e}")
 
     async def run(self):
         """Основной метод запуска."""
