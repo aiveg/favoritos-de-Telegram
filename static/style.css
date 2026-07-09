@@ -184,7 +184,8 @@ footer {
 .chat-msg-row {
     display: flex;
     gap: 0.5rem;
-    max-width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
 }
 
 /* Свои сообщения — справа */
@@ -199,10 +200,11 @@ footer {
     padding-left: 0.5rem;
 }
 
-/* Аватарка */
+/* Аватарка — прижата к нижнему краю (уровень хвостика) */
 .chat-avatar-col {
     flex-shrink: 0;
     align-self: flex-end;
+    margin-bottom: 2px;
 }
 .chat-avatar {
     width: 30px; height: 30px;
