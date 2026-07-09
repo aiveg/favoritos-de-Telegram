@@ -145,10 +145,10 @@
                     {% if msg.grouped_id and ctype != 'album' %}
                     <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
                     {% endif %}
-                    {% if msg.text %}
-                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
-                    {% endif %}
                 </div>
+                {% if msg.text %}
+                <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
+                {% endif %}
             </div>
         </div>
     </div>

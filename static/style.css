@@ -346,13 +346,14 @@ footer {
 .chat-text del { text-decoration: line-through; opacity: 0.7; }
 .chat-text a { color: var(--tg-accent); text-decoration: underline; }
 
-/* Кнопка копирования текста (слева от даты) */
+/* Кнопка копирования текста (абсолютно в правом нижнем углу пузыря) */
 .chat-copy-btn {
+    position: absolute; bottom: 0.4rem; right: 0.5rem;
     background: none; border: none; cursor: pointer;
-    font-size: 0.7rem; opacity: 0.4; padding: 0;
+    font-size: 0.7rem; opacity: 0.25; padding: 0;
     color: var(--tg-text-secondary);
     transition: opacity 0.15s;
-    margin-left: auto;
+    z-index: 1;
 }
 .chat-copy-btn:hover { opacity: 1; }
 
@@ -361,7 +362,6 @@ footer {
     display: flex; flex-wrap: wrap; gap: 0.5rem;
     font-size: 0.68rem; opacity: 0.7;
     justify-content: flex-end;
-    align-items: center;
 }
 .chat-album-tag { font-weight: 500; text-decoration: none; }
 
