@@ -133,7 +133,7 @@
                 <div class="chat-meta">
                     <span class="chat-date">{{ msg.date | format_date }}</span>
                     {%- if msg.file_size -%}
-                        {%- set loc_url = local_file_url(msg.file_path) -%}
+                        {% set loc_url = local_file_url(msg.file_path) %}
                         {%- if loc_url -%}
                         <a href="{{ loc_url }}" class="chat-size chat-local-link" title="Открыть локально">📁 {{ msg.file_size | format_size }}</a>
                         {%- else -%}
@@ -143,10 +143,10 @@
                     {%- if msg.grouped_id and ctype != 'album' -%}
                     <a href="/album/{{ msg.grouped_id }}?from_msg={{ msg.message_id }}" class="chat-album-tag">📚 Альбом</a>
                     {%- endif -%}
+                    {% if msg.text -%}
+                    <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
+                    {%- endif %}
                 </div>
-                {% if msg.text -%}
-                <button class="chat-copy-btn" onclick="copyText(this, {{ msg.text | js_escape }})" title="Копировать текст">📋</button>
-                {%- endif %}
             </div>
         </div>
     </div>
