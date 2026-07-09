@@ -8,7 +8,8 @@ import re
 import hashlib
 import logging
 import asyncio
-from datetime import datetime, timezone as dt_timezone, timedelta
+from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from telethon import TelegramClient, events
 from telethon.tl.types import (
@@ -26,6 +27,21 @@ from db import Database, ContentType
 from config import config
 
 logger = logging.getLogger(__name__)
+
+# Часовой пояс из конфига
+try:
+    _TZ = ZoneInfo(config.timezone)
+except (ZoneInfoNotFoundError, KeyError):
+    _TZ = ZoneInfo("Europe/Moscow")
+
+_UTC = dt_timezone.utc
+
+
+def _localize_dt(dt: datetime) -> datetime:
+    """Привести datetime к UTC (если наивный) и перевести в часовой пояс конфига."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    return dt.astimezone(_TZ)
 
 
 def sanitize_filename(name: str, max_len: int = 100) -> str:
@@ -101,24 +117,6 @@ def get_content_type(message) -> ContentType:
     return ContentType.TEXT
 
 
-def get_content_type_label(t: ContentType) -> str:
-    """Получить строковое название папки для типа контента."""
-    mapping = {
-        ContentType.PHOTO: "photo",
-        ContentType.VIDEO: "video",
-        ContentType.VOICE: "voice",
-        ContentType.AUDIO: "audio",
-        ContentType.DOCUMENT: "document",
-        ContentType.STICKER: "sticker",
-        ContentType.GIF: "gif",
-        ContentType.ROUND_VIDEO: "round_video",
-        ContentType.CUSTOM_EMOJI: "custom_emoji",
-        ContentType.TEXT: "text",
-        ContentType.ALBUM: "album",
-    }
-    return mapping.get(t, "other")
-
-
 def get_original_filename(message, content_type: ContentType) -> str | None:
     """Извлечь оригинальное имя файла из сообщения."""
     if content_type in (ContentType.PHOTO, ContentType.VIDEO, ContentType.GIF,
@@ -158,7 +156,7 @@ def compute_file_hash(file_path: str) -> str | None:
         return None
     sha = hashlib.sha256()
     with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
+        for chunk in iter(lambda: f.read(config.hash_chunk_size), b''):
             sha.update(chunk)
     return sha.hexdigest()
 
@@ -178,20 +176,18 @@ class Collector:
                          filename: str = None, msg_date: datetime = None) -> str:
         """
         Построить путь для сохранения файла: media/<тип>/<год>/<мес>/<id>_<имя>.<ext>.
-        Дата берётся из сообщения, конвертируется в МСК (UTC+3).
+        Дата конвертируется в часовой пояс из конфига.
         """
-        if msg_date and msg_date.tzinfo is None:
-            msg_date = msg_date.replace(tzinfo=dt_timezone.utc)
         if msg_date:
-            msk_date = msg_date + timedelta(hours=3)
+            local_date = _localize_dt(msg_date)
         else:
-            msk_date = datetime.now()
-        label = get_content_type_label(content_type)
+            local_date = datetime.now(_TZ)
+        label = ContentType.label(int(content_type))
         ext = get_file_ext(content_type, filename)
         safe_name = sanitize_filename(filename or str(message_id))
         if not safe_name.endswith(f".{ext}"):
             safe_name = f"{safe_name}.{ext}"
-        rel_path = f"{label}/{msk_date.year}/{msk_date.month:02d}/{message_id}_{safe_name}"
+        rel_path = f"{label}/{local_date.year}/{local_date.month:02d}/{message_id}_{safe_name}"
         abs_path = os.path.join(config.media_dir, rel_path)
         return abs_path
 
@@ -276,9 +272,9 @@ class Collector:
         message_id = message.id
         date_utc = message.date
         if date_utc:
-            date_utc = date_utc.replace(tzinfo=dt_timezone.utc).isoformat()
+            date_utc = date_utc.replace(tzinfo=_UTC).isoformat()
         else:
-            date_utc = datetime.now(dt_timezone.utc).isoformat()
+            date_utc = datetime.now(_UTC).isoformat()
 
         # Пропускаем, если уже есть
         if self.db.message_exists(message_id):
@@ -287,8 +283,8 @@ class Collector:
 
         content_type = get_content_type(message)
         text = message.text or message.message or ""
-        if text and len(text) > 10000:
-            text = text[:10000]  # Ограничение длины текста
+        if text and len(text) > config.max_text_length:
+            text = text[:config.max_text_length]  # Ограничение длины текста
 
         # Скачиваем медиа
         file_path, thumb_path, file_hash = await self._download_media(
@@ -349,7 +345,6 @@ class Collector:
                 except Exception:
                     pass
             # Попробуем извлечь название чата из заголовка пересланного сообщения
-            # В Telethon v2 доступно через fwd_from.chat_title, если есть
             if hasattr(message.fwd_from, 'chat_title') and message.fwd_from.chat_title:
                 forward_chat_title = message.fwd_from.chat_title
             # Ссылка на оригинальное сообщение
@@ -407,11 +402,26 @@ class Collector:
 
         return False
 
+    async def _process_message_batch(self, gen):
+        """Обработать поток сообщений (без сохранения в память)."""
+        count = 0
+        async for msg in gen:
+            try:
+                if await self.process_message(msg):
+                    count += 1
+            except FloodWaitError as e:
+                logger.warning(f"FloodWait: ждём {e.seconds} секунд")
+                await asyncio.sleep(e.seconds)
+            except Exception as e:
+                logger.error(f"Ошибка обработки сообщения {msg.id}: {e}", exc_info=True)
+        return count
+
     async def sync_all_messages(self) -> int:
         """
         Выгрузить ВСЕ сообщения из избранного (полная синхронизация).
         Использует min_id от последнего записанного в БД сообщения.
         Если БД пустая — выгружает весь архив за всё время.
+        Обрабатывает сообщения потоково, не загружая всё в память.
         Возвращает количество новых сообщений.
         """
         last_id = self.db.get_max_message_id()
@@ -420,23 +430,9 @@ class Collector:
         else:
             logger.info("БД пуста — полная синхронизация ВСЕГО архива избранного за всё время")
 
-        total_processed = 0
         try:
-            messages = []
-            async for msg in self.client.iter_messages('me', min_id=last_id, reverse=True, limit=None):
-                messages.append(msg)
-
-            logger.info(f"Найдено {len(messages)} сообщений для синхронизации")
-            for msg in messages:
-                try:
-                    if await self.process_message(msg):
-                        total_processed += 1
-                except FloodWaitError as e:
-                    logger.warning(f"FloodWait: ждём {e.seconds} секунд")
-                    await asyncio.sleep(e.seconds)
-                except Exception as e:
-                    logger.error(f"Ошибка обработки сообщения {msg.id}: {e}", exc_info=True)
-
+            gen = self.client.iter_messages('me', min_id=last_id, reverse=True, limit=None)
+            total_processed = await self._process_message_batch(gen)
             logger.info(f"Синхронизация завершена. Добавлено: {total_processed} новых сообщений")
         except Exception as e:
             logger.error(f"Ошибка синхронизации: {e}", exc_info=True)
@@ -453,7 +449,7 @@ class Collector:
         Watch-режим: полная синхронизация + слушатель новых сообщений.
         Устойчив к разрывам соединения — переподключается с экспоненциальным backoff.
         """
-        retry_delay = 30  # Начальная задержка между переподключениями
+        retry_delay = config.retry_delay_initial
 
         # Регистрируем обработчик новых сообщений один раз
         @self.client.on(events.NewMessage(chats='me'))
@@ -485,7 +481,7 @@ class Collector:
             # Переподключение с экспоненциальным backoff
             logger.info(f"Переподключение через {retry_delay} секунд...")
             await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, 900)  # Максимум 15 минут
+            retry_delay = min(retry_delay * 2, config.retry_delay_max)
 
             try:
                 await self.client.connect()
@@ -496,7 +492,7 @@ class Collector:
                 # Инкрементальная синхронизация пропущенных сообщений
                 await self.sync_all_messages()
                 # Сбрасываем задержку после успешного переподключения
-                retry_delay = 30
+                retry_delay = config.retry_delay_initial
             except Exception as e:
                 logger.error(f"Ошибка переподключения: {e}")
 
