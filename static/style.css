@@ -184,20 +184,16 @@ footer {
 .chat-msg-row {
     display: flex;
     gap: 0.5rem;
-    max-width: 600px;
-    margin: 0 auto;
 }
 
 /* Свои сообщения — справа */
 .chat-msg-row.chat-me {
     justify-content: flex-end;
-    padding-right: 0.5rem;
 }
 
 /* Пересланные — слева */
 .chat-msg-row.chat-from {
     justify-content: flex-start;
-    padding-left: 0.5rem;
 }
 
 /* Аватарка — прижата к нижнему краю (уровень хвостика) */
