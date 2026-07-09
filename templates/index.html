@@ -337,13 +337,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         avatarHtml = '<div class="chat-avatar-col"><div class="chat-avatar chat-avatar-animal">' + avatarEmoji + '</div></div>';
                     }
 
-                    // Текст с раскрытием на месте
+                    // Текст с раскрытием на месте (сервер уже экранировал)
                     var textHtml = '';
                     if (msg.text) {
                         if (textLen > 500) {
-                            textHtml = '<div class="chat-text"><span class="text-short">' + escHtml(textTrunc) + '… </span><span class="text-full" style="display:none">' + escHtml(msg.text) + '</span><a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a></div>';
+                            textHtml = '<div class="chat-text"><span class="text-short">' + msg.text.substring(0, 500) + '… </span><span class="text-full" style="display:none">' + msg.text + '</span><a href="#" class="chat-readmore" onclick="toggleText(event, this)">читать дальше</a></div>';
                         } else {
-                            textHtml = '<div class="chat-text">' + escHtml(msg.text) + '</div>';
+                            textHtml = '<div class="chat-text">' + msg.text + '</div>';
                         }
                     }
 
